@@ -1,0 +1,12 @@
+{
+    "display_name": "깡갤 복사기(테스트)",
+    "loading_order": 1000,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "User",
+    "version": "1.5.5",
+    "homePage": "",
+    "auto_update": false
+}
