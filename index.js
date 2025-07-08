@@ -351,7 +351,7 @@
         }
     }
 
-    // 설정 로드 함수
+    // ⭐️ 설정 로드 함수 (대필 UI 제어 로직 수정)
     function loadSettings() {
         try {
             const savedSettings = localStorage.getItem('copybot_settings');
@@ -374,12 +374,13 @@
                 if (settings.ghostwrite.position) {
                     $(`input[name="copybot_ghostwrite_position"][value="${settings.ghostwrite.position}"]`).prop('checked', true);
                 }
-                 if (isGhostwriteEnabled) {
-                    $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_panel .copybot_description').show();
-                    $('#copybot_ghostwrite_textbox').show();
+                
+                // 토글 상태에 따라 모든 관련 UI를 제어
+                const ghostwriteElements = $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_panel .copybot_description, #copybot_ghostwrite_textbox');
+                if (isGhostwriteEnabled) {
+                    ghostwriteElements.show();
                 } else {
-                    $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_panel .copybot_description').hide();
-                    $('#copybot_ghostwrite_textbox').hide();
+                    ghostwriteElements.hide();
                 }
             }
 
@@ -705,7 +706,7 @@
     }
 
 
-    // UI 이벤트 설정 함수
+    // ⭐️ UI 이벤트 설정 함수 (리스너 중복 방지 강화)
     function setupEventHandlers() {
         console.log('깡갤 복사기: 이벤트 핸들러 설정 시작');
         
