@@ -1,10 +1,6 @@
 // 깡갤 복사기 확장프로그램
 // SillyTavern용 자동 메시지 복사 도구
 
-// 디버깅로그:
-// - 재생성 시 토스트 메시지 중복 문제: triggerCacheBustRegeneration에서 토스트 메시지 제거함
-// - 대필 토스트 메시지 시점 변경: 대필 완료시 -> 대필 요청시로 변경, 프롬프트 내용 포함하여 표시
-
 (function() {
     'use strict';
 
@@ -162,7 +158,20 @@
                                     </div>
                                 </div>
                                 <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666; display:none;">
-                                    대필 아이콘(<i class="fa-solid fa-user-edit"></i>)을 누르면, 위에 써진 내용(프롬프트)와 채팅창 밑의 대필 임시 지시문의 내용을 조합하여 사용자를 대신해 봇이 글을 써줍니다. (비어있는 곳은 알아서 무시합니다)
+                                    대필 아이콘(<i class="fa-solid fa-user-edit"></i>)을 누르면, 위에 써진 내용(프롬프트)와 채팅창에 적힌 대필 지시문의 내용을 조합하여 사용자를 대신해 봇이 글을 써줍니다. (비어있는 곳은 알아서 무시합니다)
+                                </div>
+                            </div>
+                            
+                            <div class="copybot_settings_item">
+                                <div class="copybot_settings_main">
+                                    <span class="copybot_settings_label">임시 대필칸 사용</span>
+                                    <button id="copybot_temp_field_toggle" class="copybot_toggle_button" data-enabled="true">
+                                        ON
+                                    </button>
+                                </div>
+                                <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
+                                    체크하면 대필 전용칸이 생기고 기본 입력창 내용은 무시됩니다.<br>
+                                    체크 해제시 기본 입력창에 쓴 내용을 대필 지시문으로 사용합니다.
                                 </div>
                             </div>
                         </div>
@@ -330,7 +339,8 @@
                 ghostwrite: {
                     enabled: $('#copybot_ghostwrite_toggle').attr('data-enabled') === 'true',
                     text: $('#copybot_ghostwrite_textbox').val() || '',
-                    position: $('input[name="copybot_ghostwrite_position"]:checked').val() || 'right'
+                    position: $('input[name="copybot_ghostwrite_position"]:checked').val() || 'right',
+                    useTempField: $('#copybot_temp_field_toggle').attr('data-enabled') === 'true'
                 },
                 tagRemove: {
                     enabled: $('#copybot_tag_remove_toggle').attr('data-enabled') === 'true',
@@ -410,6 +420,10 @@
                     $(`input[name="copybot_ghostwrite_position"][value="${settings.ghostwrite.position}"]`).prop('checked', true);
                 }
                 
+                // 임시 대필칸 사용 설정 로드
+                const useTempField = settings.ghostwrite.useTempField !== undefined ? settings.ghostwrite.useTempField : true;
+                $('#copybot_temp_field_toggle').attr('data-enabled', useTempField).text(useTempField ? 'ON' : 'OFF');
+                
                 // 토글 상태에 따라 모든 관련 UI를 제어
                 const ghostwriteElements = $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_panel .copybot_description, #copybot_ghostwrite_textbox');
                 if (isGhostwriteEnabled) {
@@ -479,15 +493,23 @@
         try {
             console.log('깡갤 복사기: 임시 프롬프트 입력칸 추가 시작');
             
+            // 임시 대필칸 사용 설정 확인
+            const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
+            
+            // 기존 임시 프롬프트 제거
+            document.querySelectorAll('.copybot_temp_prompt_below').forEach(el => el.remove());
+            
+            if (!useTempField) {
+                console.log('깡갤 복사기: 임시 대필칸 사용 안함 - 건너뜀');
+                return;
+            }
+            
             const sendTextarea = document.querySelector('#send_textarea');
             if (!sendTextarea) {
                 console.log('깡갤 복사기: send_textarea를 찾을 수 없음');
                 return;
             }
 
-            // 기존 임시 프롬프트 제거
-            document.querySelectorAll('.copybot_temp_prompt_below').forEach(el => el.remove());
-            
             // send_textarea의 부모와 조부모 찾기
             const textareaParent = sendTextarea.parentElement; // nonQRFormItems
             const grandParent = textareaParent.parentElement; // send_form
@@ -576,17 +598,32 @@
     async function executeGhostwrite() {
         try {
             const promptText = $('#copybot_ghostwrite_textbox').val().trim();
-            const tempPromptText = $('#copybot_temp_prompt').val().trim();
+            const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
             
             let finalPrompt = '';
 
-            // 대필프롬프트와 임시프롬프트만 사용 (기존 입력창 내용 무시)
-            if (promptText) {
-                finalPrompt += promptText;
-            }
-            if (tempPromptText) {
-                if (finalPrompt) finalPrompt += ' '; 
-                finalPrompt += tempPromptText;
+            if (useTempField) {
+                // 임시 대필칸 사용: 대필프롬프트 + 임시프롬프트만 사용
+                const tempPromptText = $('#copybot_temp_prompt').val().trim();
+                
+                if (promptText) {
+                    finalPrompt += promptText;
+                }
+                if (tempPromptText) {
+                    if (finalPrompt) finalPrompt += ', '; 
+                    finalPrompt += tempPromptText;
+                }
+            } else {
+                // 기본 입력창 사용: 대필프롬프트 + 기본 입력창 내용 사용
+                const chatInputText = $('#send_textarea').val().trim();
+                
+                if (promptText) {
+                    finalPrompt += promptText;
+                }
+                if (chatInputText) {
+                    if (finalPrompt) finalPrompt += ', ';  
+                    finalPrompt += chatInputText;
+                }
             }
 
             // 대필 요청 시 토스트 메시지 표시 (프롬프트 내용 포함)
@@ -594,8 +631,8 @@
             if (!finalPrompt.trim()) {
                 requestMessage = '빈 프롬프트로 대필 요청합니다.';
             } else {
-                requestMessage = finalPrompt.length > 50 
-                    ? `"${finalPrompt.substring(0, 50)}..."로 대필 요청합니다.`
+                requestMessage = finalPrompt.length > 100 
+                    ? `"${finalPrompt.substring(0, 100)}..."로 대필 요청합니다.`
                     : `"${finalPrompt}"로 대필 요청합니다.`;
             }
             toastr.info(requestMessage);
@@ -674,11 +711,13 @@
             }
             
             // 임시 프롬프트 내용 저장
-            saveTempPrompt();
+            if (useTempField) {
+                saveTempPrompt();
+            }
 
         } catch (error) {
             console.error('깡갤 복사기: 대필 실행 중 오류', error);
-            toastr.error('대필 실행 중 오류가 발생했습니다. 콘솔을 확인해주세요.');
+            toastr.error('대필 중단!.');
         }
     }
 
@@ -822,9 +861,15 @@
 
             cleanedText = cleanedText.replace(/<[^>]*>/g, '');
             
-            // {{ }} 템플릿 구문 제거 추가
+            // {{ }} 템플릿 구문 제거 추가(에셋)
             cleanedText = cleanedText.replace(/\{\{.*?\}\}/g, '');
             
+			// [STATUS_START] ~ [STATUS_END] 상태창 제거(301호)
+            cleanedText = cleanedText.replace(/\[STATUS_START\][\s\S]*?\[STATUS_END\]/g, '');
+
+			// 괴담출 상태창 제거 (접속자 정보 ~ :: ~ ::)
+            cleanedText = cleanedText.replace(/접속자 정보[\s\S]*?::[^:]*::/g, '');
+			
             cleanedText = cleanedText.replace(/\n\s*\n\s*\n/g, '\n\n');
             cleanedText = cleanedText.trim();
 
@@ -1151,10 +1196,18 @@
                 const button = $(this);
                 const isEnabled = button.attr('data-enabled') === 'true';
                 button.attr('data-enabled', !isEnabled).text(isEnabled ? 'OFF' : 'ON');
-                const targetPanel = button.attr('id') === 'copybot_ghostwrite_toggle'
-                    ? $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_textbox, #copybot_ghostwrite_panel .copybot_description')
-                    : $(`#${button.attr('id').replace('_toggle', '_options')}`);
-                targetPanel.slideToggle(!isEnabled);
+                
+                if (button.attr('id') === 'copybot_ghostwrite_toggle') {
+                    const targetPanel = $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_textbox, #copybot_ghostwrite_panel .copybot_description');
+                    targetPanel.slideToggle(!isEnabled);
+                } else if (button.attr('id') === 'copybot_temp_field_toggle') {
+                    // 임시 대필칸 사용 토글 처리
+                    addTempPromptField();
+                } else {
+                    const targetPanel = $(`#${button.attr('id').replace('_toggle', '_options')}`);
+                    targetPanel.slideToggle(!isEnabled);
+                }
+                
                 updateActionButtons();
                 // 설정 변경 시 안전한 아이콘 업데이트 사용
                 safeUpdateInputFieldIcons();
