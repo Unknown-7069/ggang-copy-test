@@ -39,6 +39,25 @@
         return { h: h * 360, s: s * 100, l: l * 100 };
     }
     
+    // 마지막 메시지 번호를 구하는 함수 (새로 추가)
+    function getLastMessageIndex() {
+        try {
+            const context = window.SillyTavern.getContext();
+            if (!context || !context.chat || context.chat.length === 0) {
+                console.warn('깡갤 복사기: 대화 기록이 없습니다.');
+                return 0;
+            }
+            
+            // 마지막 메시지의 인덱스 (0부터 시작하므로 length - 1)
+            const lastIndex = context.chat.length - 1;
+            console.log(`깡갤 복사기: 마지막 메시지 번호 계산됨: ${lastIndex}`);
+            return lastIndex;
+        } catch (error) {
+            console.error('깡갤 복사기: 마지막 메시지 번호 계산 실패', error);
+            return 0;
+        }
+    }
+    
     // settings.html 내용을 직접 포함 (404 오류 해결)
     const settingsHTML = `
     <div id="copybot_settings" class="extension_settings">
@@ -67,7 +86,7 @@
                             </button>
                         </div>
                         
-                        <small>메세지 범위 입력 후 단순 복사 버튼을 클릭하면 클립보드에 자동 복사&아래 텍스트박스에 해당 내용이 삽입됩니다.</small>
+                        <small>메세지 범위 입력 후 단순 복사 버튼을 클릭하면 클립보드에 자동 복사&아래 텍스트박스에 해당 내용이 삽입됩니다. 미입력시 자동으로 첫번쨰 메세지/마지막 메세지로 설정됩니다.</small>
                     </div>
                     
                     <!-- 결과 섹션 -->
@@ -125,10 +144,16 @@
                         <div id="copybot_ghostwrite_panel" class="copybot_settings_panel" style="display: none;">
                             <div class="copybot_settings_item">
                                 <div class="copybot_settings_main">
-                                    <span class="copybot_settings_label">대필 프롬프트(명령하기)</span>
+                                    <span class="copybot_settings_label">대필 기능 사용</span>
                                     <button id="copybot_ghostwrite_toggle" class="copybot_toggle_button" data-enabled="false">
                                         OFF
                                     </button>
+                                </div>
+                            </div>
+                            
+                            <div class="copybot_settings_item">
+                                <div class="copybot_settings_main">
+                                    <span class="copybot_settings_label">대필 프롬프트</span>
                                 </div>
                                 <textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="margin-top: 12px; display: none;"></textarea>
                             </div>
@@ -166,7 +191,7 @@
                                 <div class="copybot_settings_main">
                                     <span class="copybot_settings_label">임시 대필칸 사용</span>
                                     <button id="copybot_temp_field_toggle" class="copybot_toggle_button" data-enabled="true">
-                                        ON
+                                        OFF
                                     </button>
                                 </div>
                                 <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
@@ -421,7 +446,7 @@
                 }
                 
                 // 임시 대필칸 사용 설정 로드
-                const useTempField = settings.ghostwrite.useTempField !== undefined ? settings.ghostwrite.useTempField : true;
+                const useTempField = settings.ghostwrite.useTempField !== undefined ? settings.ghostwrite.useTempField : false;
                 $('#copybot_temp_field_toggle').attr('data-enabled', useTempField).text(useTempField ? 'ON' : 'OFF');
                 
                 // 토글 상태에 따라 모든 관련 UI를 제어
@@ -493,14 +518,16 @@
         try {
             console.log('깡갤 복사기: 임시 프롬프트 입력칸 추가 시작');
             
-            // 임시 대필칸 사용 설정 확인
+            // 대필기능과 임시 대필칸 사용 설정 확인
+            const ghostwriteEnabled = $('#copybot_ghostwrite_toggle').attr('data-enabled') === 'true';
             const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
             
             // 기존 임시 프롬프트 제거
             document.querySelectorAll('.copybot_temp_prompt_below').forEach(el => el.remove());
             
-            if (!useTempField) {
-                console.log('깡갤 복사기: 임시 대필칸 사용 안함 - 건너뜀');
+            // 대필기능이 꺼져있거나 임시 대필칸 사용이 꺼져있으면 종료
+            if (!ghostwriteEnabled || !useTempField) {
+                console.log('깡갤 복사기: 대필기능 꺼짐 또는 임시 대필칸 사용 안함 - 건너뜀');
                 return;
             }
             
@@ -653,10 +680,22 @@
             // 간단한 오버라이드 명령어 (generateQuietPrompt 자체가 이미 최우선순위!)
             const overridePrompt = finalPrompt.trim() 
                 ? `<OVERRIDE>
-{{user}} POV only. ${finalPrompt}
+Apply the following instructions with priority over existing settings:
+1. Write only {{user}}'s reactions and responses
+2. Follow {{user}}'s character settings and personality
+3. Do not use system messages
+4. Do not repeat or quote sentences or expressions from previous responses
+5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
+
+Additional instructions: ${finalPrompt}
 </OVERRIDE>`
                 : `<OVERRIDE>
-{{user}} POV only.
+Apply the following instructions with priority over existing settings:
+1. Write only {{user}}'s reactions and responses
+2. Follow {{user}}'s character settings and personality
+3. Do not use system messages
+4. Do not repeat or quote sentences or expressions from previous responses
+5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
 </OVERRIDE>`;
 
             console.log('🔹 최우선순위 오버라이드 전송 중... (극한 토큰 절약)');
@@ -1130,13 +1169,56 @@
         
         const eventMap = {
             '#copybot_execute': () => {
-                const startPos = parseInt($("#copybot_start").val());
-                const endPos = parseInt($("#copybot_end").val());
-                if (isNaN(startPos) || isNaN(endPos)) { toastr.error('올바른 숫자를 입력해주세요.'); return; }
+                let startPos = parseInt($("#copybot_start").val());
+                let endPos = parseInt($("#copybot_end").val());
+                
+                // 입력값이 비어있는지 확인
+                const startEmpty = isNaN(startPos) || $("#copybot_start").val().trim() === '';
+                const endEmpty = isNaN(endPos) || $("#copybot_end").val().trim() === '';
+                const anyFieldEmpty = startEmpty || endEmpty;
+                
+                // 시작위치가 비어있거나 NaN이면 0으로 설정
+                if (startEmpty) {
+                    startPos = 0;
+                    $("#copybot_start").val(0);
+                    toastr.info('시작위치가 자동으로 0번 메시지로 설정되었습니다.');
+                }
+                
+                // 마지막 메시지 번호를 한 번만 계산
+                const actualLastIndex = getLastMessageIndex();
+
+                // 종료위치가 비어있거나 NaN이면 마지막 메시지로 설정
+                if (endEmpty) {
+                    endPos = actualLastIndex;
+                    $("#copybot_end").val(endPos);
+                    toastr.info(`종료위치가 자동으로 ${endPos}번 메시지(마지막)로 설정되었습니다.`);
+                }
+
+                // 종료위치가 마지막 메시지보다 클 경우 자동 조정
+                if (endPos > actualLastIndex) {
+                    endPos = actualLastIndex;
+                    $("#copybot_end").val(endPos);
+                    toastr.warning(`입력하신 종료위치가 마지막 메시지(${actualLastIndex}번)보다 커서 자동으로 ${actualLastIndex}번으로 조정되었습니다.`);
+                }
+                
+                // 복사할 메시지 개수 계산
+                const messageCount = endPos - startPos + 1;
+                
+                // 경고 조건: 하나라도 미지정 상태였고 + 30개 이상 복사될 경우
+                if (anyFieldEmpty && messageCount >= 30) {
+                    const confirmMessage = `시작위치나 종료위치를 입력하지 않으셔서 자동으로 ${messageCount}개의 메시지가 복사 대상으로 설정되었습니다.\n\n메시지가 많아서 환경에 따라 렉이 걸리거나 브라우저가 느려질 수 있습니다.\n\n정말로 ${startPos}번부터 ${endPos}번까지 ${messageCount}개 메시지를 복사하시겠습니까?\n\n의도하신 게 맞다면 '확인'을, 실수로 누르신 거라면 '취소'를 눌러주세요.`;
+                    
+                    if (!confirm(confirmMessage)) {
+                        toastr.info('메시지 복사가 취소되었습니다.');
+                        return;
+                    }
+                }
+                
                 if (startPos > endPos) { toastr.error('시작위치는 종료위치보다 작아야 합니다.'); return; }
                 if (startPos < 0) { toastr.error('시작위치는 0 이상이어야 합니다.'); return; }
                 executeCopyCommand(startPos, endPos);
             },
+
             '#copybot_linebreak_fix': () => {
                 const textbox = $('#copybot_textbox');
                 const currentText = textbox.val();
@@ -1200,6 +1282,8 @@
                 if (button.attr('id') === 'copybot_ghostwrite_toggle') {
                     const targetPanel = $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_textbox, #copybot_ghostwrite_panel .copybot_description');
                     targetPanel.slideToggle(!isEnabled);
+                    // 대필기능 토글시 임시 대필칸도 업데이트
+                    addTempPromptField();
                 } else if (button.attr('id') === 'copybot_temp_field_toggle') {
                     // 임시 대필칸 사용 토글 처리
                     addTempPromptField();
