@@ -916,3 +916,21 @@
         font-size: 12px;
     }
 }
+/* 비우기 버튼 스타일 (빨간색) */
+.copybot_clear_button {
+    background: #e53e3e !important;
+    box-shadow: 0 1px 2px rgba(229, 62, 62, 0.2) !important;
+}
+
+.copybot_clear_button:hover:not(:disabled) {
+    background: #c53030 !important;
+    box-shadow: 0 2px 6px rgba(229, 62, 62, 0.3) !important;
+}
+
+.copybot_clear_button:disabled {
+    background: #cbd5e0 !important;
+    color: #a0aec0 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
+}

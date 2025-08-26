@@ -98,10 +98,13 @@
                                 태그 제거
                             </button>
                             <button id="copybot_linebreak_fix" class="copybot_textbox_button copybot_linebreak_button" title="텍스트박스에서 줄바꿈 정리" disabled>
-                                줄바꿈 정리
+                                정리
                             </button>
                             <button id="copybot_copy_content" class="copybot_textbox_button" title="현재 텍스트박스 내용을 클립보드에 복사" disabled>
                                 위 내용 복사
+                            </button>
+                            <button id="copybot_clear_content" class="copybot_textbox_button copybot_clear_button" title="텍스트박스 내용 전체 삭제" disabled>
+                                비우기
                             </button>
                             <button id="copybot_save_txt" class="copybot_textbox_button copybot_save_button" title="텍스트박스 내용을 txt 파일로 저장" disabled>
                                 txt저장
@@ -1177,41 +1180,42 @@ Apply the following instructions with priority over existing settings:
                 const endEmpty = isNaN(endPos) || $("#copybot_end").val().trim() === '';
                 const anyFieldEmpty = startEmpty || endEmpty;
                 
-                // 시작위치가 비어있거나 NaN이면 0으로 설정
-                if (startEmpty) {
-                    startPos = 0;
-                    $("#copybot_start").val(0);
-                    toastr.info('시작위치가 자동으로 0번 메시지로 설정되었습니다.');
+                // 하나라도 미지정이면 값만 설정하고 복사는 실행하지 않음
+                if (anyFieldEmpty) {
+                    // 시작위치가 비어있거나 NaN이면 0으로 설정
+                    if (startEmpty) {
+                        startPos = 0;
+                        $("#copybot_start").val(0);
+                    }
+                    
+                    // 마지막 메시지 번호를 한 번만 계산
+                    const actualLastIndex = getLastMessageIndex();
+
+                    // 종료위치가 비어있거나 NaN이면 마지막 메시지로 설정
+                    if (endEmpty) {
+                        endPos = actualLastIndex;
+                        $("#copybot_end").val(endPos);
+                    }
+                    
+                    // 상황에 따른 토스트 메시지 표시
+                    if (startEmpty && endEmpty) {
+                        toastr.info(`위치가 지정되지 않아 전체 범위(#0~#${endPos})로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.`);
+                    } else if (startEmpty) {
+                        toastr.info('시작위치가 지정되지 않아 #0으로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.');
+                    } else if (endEmpty) {
+                        toastr.info(`종료위치가 지정되지 않아 #${endPos}로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.`);
+                    }
+                    return; // 복사 실행하지 않고 종료
                 }
                 
-                // 마지막 메시지 번호를 한 번만 계산
+                // 마지막 메시지 번호 계산 (값이 모두 지정된 경우에만)
                 const actualLastIndex = getLastMessageIndex();
-
-                // 종료위치가 비어있거나 NaN이면 마지막 메시지로 설정
-                if (endEmpty) {
-                    endPos = actualLastIndex;
-                    $("#copybot_end").val(endPos);
-                    toastr.info(`종료위치가 자동으로 ${endPos}번 메시지(마지막)로 설정되었습니다.`);
-                }
-
+                
                 // 종료위치가 마지막 메시지보다 클 경우 자동 조정
                 if (endPos > actualLastIndex) {
                     endPos = actualLastIndex;
                     $("#copybot_end").val(endPos);
                     toastr.warning(`입력하신 종료위치가 마지막 메시지(${actualLastIndex}번)보다 커서 자동으로 ${actualLastIndex}번으로 조정되었습니다.`);
-                }
-                
-                // 복사할 메시지 개수 계산
-                const messageCount = endPos - startPos + 1;
-                
-                // 경고 조건: 하나라도 미지정 상태였고 + 30개 이상 복사될 경우
-                if (anyFieldEmpty && messageCount >= 30) {
-                    const confirmMessage = `시작위치나 종료위치를 입력하지 않으셔서 자동으로 ${messageCount}개의 메시지가 복사 대상으로 설정되었습니다.\n\n메시지가 많아서 환경에 따라 렉이 걸리거나 브라우저가 느려질 수 있습니다.\n\n정말로 ${startPos}번부터 ${endPos}번까지 ${messageCount}개 메시지를 복사하시겠습니까?\n\n의도하신 게 맞다면 '확인'을, 실수로 누르신 거라면 '취소'를 눌러주세요.`;
-                    
-                    if (!confirm(confirmMessage)) {
-                        toastr.info('메시지 복사가 취소되었습니다.');
-                        return;
-                    }
                 }
                 
                 if (startPos > endPos) { toastr.error('시작위치는 종료위치보다 작아야 합니다.'); return; }
@@ -1244,6 +1248,10 @@ Apply the following instructions with priority over existing settings:
             },
             '#copybot_remove_tags': () => removeTagsFromElement('#copybot_textbox'),
             '#copybot_copy_content': copyTextboxContent,
+            '#copybot_clear_content': () => {
+                $('#copybot_textbox').val('').trigger('input');
+                toastr.success('텍스트박스가 비워졌습니다.');
+            },
             '#copybot_jump_first': () => {
                 if (confirm("첫 메시지로 이동합니다.\n\n누적된 채팅이 많을 경우 심한 렉에 걸리거나 튕길 수 있습니다.\n\n정말 이동하시겠습니까?\n실수로 누른 거라면 '취소'를 눌러주세요.")) {
                     executeSimpleCommand('/chat-jump 0', '첫 메시지로 이동!');
@@ -1316,7 +1324,7 @@ Apply the following instructions with priority over existing settings:
         
         $(document).off('input', '#copybot_textbox').on('input', '#copybot_textbox', function() {
             const hasContent = $(this).val().trim().length > 0;
-            $('#copybot_copy_content, #copybot_remove_tags, #copybot_linebreak_fix, #copybot_save_txt').prop('disabled', !hasContent);
+            $('#copybot_copy_content, #copybot_remove_tags, #copybot_linebreak_fix, #copybot_save_txt, #copybot_clear_content').prop('disabled', !hasContent);
         });
 
         $(document).off('change', '.copybot_checkbox, .copybot_radio').on('change', '.copybot_checkbox, .copybot_radio', () => {
