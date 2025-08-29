@@ -952,11 +952,13 @@
                         await switchProfile(selectedProfile);
                 if (isDebugMode) {
                     toastr.success(`대필 전용 프로필 '${selectedProfile}'로 전환되었습니다.`);
+                        }
                     }
                 }
             }
-        }    
+            
             const context = window.SillyTavern.getContext();
+
             if (!context || !context.generateQuietPrompt) {
                 toastr.error('SillyTavern 컨텍스트를 찾을 수 없습니다.');
                 return;
@@ -1044,10 +1046,11 @@ ${exclusionInstruction}
 
                 if (isDebugMode) {
                     toastr.success(`원래 프로필 '${originalProfile}'로 복원되었습니다.`);
+                }
             }
         }
     }
-}
+
     // 임시 프롬프트 저장 함수
     function saveTempPrompt() {
         try {
