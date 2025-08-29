@@ -1,4 +1,4 @@
-﻿// 깡갤 복사기 확장프로그램
+// 깡갤 복사기 확장프로그램
 // SillyTavern용 자동 메시지 복사 도구
 
 (function() {
@@ -49,7 +49,7 @@
         return { h: h * 360, s: s * 100, l: l * 100 };
     }
     
-    // 마지막 메시지 번호를 구하는 함수
+    // 마지막 메시지 번호를 구하는 함수 (새로 추가)
     function getLastMessageIndex() {
         try {
             const context = window.SillyTavern.getContext();
@@ -912,58 +912,74 @@
     }
 
     // **간단한 최우선순위 방식: 100% 안전한 대필 실행 함수 (사용자 설정 건드리지 않음 + 토큰 절약)**
-                async function executeGhostwrite() {
-        let originalProfile = null;
-        let profileChangeAttempted = false;
+    // 기존 async function executeGhostwrite() { ... } 부분을 모두 지우고 아래 코드로 교체하세요.
 
-        try {
-            const promptText = ($('#copybot_ghostwrite_textbox').val() || '').trim();
-            const excludeText = ($('#copybot_ghostwrite_exclude_textbox').val() || '').trim();
-            const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
-            
-            let finalPrompt = '';
+        async function executeGhostwrite() {
+    // 프로필 전환을 위한 변수 선언 (신버전 기능)
+    let originalProfile = null;
+    let profileSwitched = false;
 
-            if (useTempField) {
-                const tempPromptText = ($('#copybot_temp_prompt').val() || '').trim();
-                const parts = [];
-                if (promptText) parts.push(promptText);
-                if (tempPromptText) parts.push(tempPromptText);
-                finalPrompt = parts.join(', ');
-            } else {
-                const chatInputText = ($('#send_textarea').val() || '').trim();
-                const parts = [];
-                if (promptText) parts.push(promptText);
-                if (chatInputText) parts.push(chatInputText);
-                finalPrompt = parts.join(', ');
+    try {
+        const promptText = ($('#copybot_ghostwrite_textbox').val() || '').trim();
+        const excludeText = ($('#copybot_ghostwrite_exclude_textbox').val() || '').trim();
+        const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
+        
+        let finalPrompt = '';
+
+        if (useTempField) {
+            // 임시 대필칸 사용: 대필프롬프트 + 임시프롬프트만 사용
+            const tempPromptText = ($('#copybot_temp_prompt').val() || '').trim();
+            const parts = [];
+            if (promptText) parts.push(promptText);
+            if (tempPromptText) parts.push(tempPromptText);
+            finalPrompt = parts.join(', ');
+        } else {
+            // 기본 입력창 사용: 대필프롬프트 + 기본 입력창 내용 사용
+            const chatInputText = ($('#send_textarea').val() || '').trim();
+            const parts = [];
+            if (promptText) parts.push(promptText);
+            if (chatInputText) parts.push(chatInputText);
+            finalPrompt = parts.join(', ');
+        }
+
+        let requestMessage = finalPrompt.trim()
+            ? (finalPrompt.length > 100 ? `"${finalPrompt.substring(0, 100)}..."` : `"${finalPrompt}"`) + "로 대필 요청합니다."
+            : '빈 프롬프트로 대필 요청합니다.';
+        toastr.info(requestMessage);
+
+        debugLog('🎭 깡갤 복사기: 대필 시작');
+
+        // [신버전 기능] 대필 전용 프로필 설정이 되어 있으면 전환
+        const selectedProfile = $('#copybot_ghostwrite_profile_select').val();
+        if (selectedProfile && selectedProfile !== 'default') {
+            const connectionDropdown = document.querySelector('#connection_profiles');
+            if (connectionDropdown) {
+                originalProfile = connectionDropdown.value;
+                profileSwitched = await switchProfile(selectedProfile);
+                if (profileSwitched) toastr.success(`대필 전용 프로필 '${selectedProfile}'로 전환되었습니다.`);
+                else toastr.warning('프로필 전환에 실패했지만 기본 프로필로 대필을 계속합니다.');
             }
+        }
+        
+        const context = window.SillyTavern.getContext();
+        if (!context || !context.generateQuietPrompt) {
+            toastr.error('SillyTavern 컨텍스트를 찾을 수 없습니다.');
+            return;
+        }
 
-            let requestMessage = finalPrompt.trim() ? `"${finalPrompt.substring(0, 100)}..."로 대필 요청합니다.` : '빈 프롬프트로 대필 요청합니다.';
-            toastr.info(requestMessage);
+        // [구버전 기능] 제외 프롬프트가 있을 경우, 지시문 추가
+        let exclusionInstruction = '';
+        if (excludeText) {
+            exclusionInstruction = `
+[Exclusion Instructions]
+CRITICAL: The following elements must be completely avoided in the response. Do not use these words, phrases, tones, or concepts:
+${excludeText}
+`;
+        }
 
-            debugLog('🎭 깡갤 복사기: 대필 시작');
-
-            const selectedProfile = $('#copybot_ghostwrite_profile_select').val();
-            if (selectedProfile && selectedProfile !== 'default') {
-                const connectionDropdown = document.querySelector('#connection_profiles');
-                if (connectionDropdown) {
-                    originalProfile = connectionDropdown.value;
-                    if (originalProfile !== selectedProfile) {
-                        profileChangeAttempted = true;
-                        await switchProfile(selectedProfile);
-                        toastr.success(`대필 전용 프로필 '${selectedProfile}'로 전환되었습니다.`);
-                    }
-                }
-            }
-            
-            const context = window.SillyTavern.getContext();
-            if (!context || !context.generateQuietPrompt) {
-                toastr.error('SillyTavern 컨텍스트를 찾을 수 없습니다.');
-                return;
-            }
-
-            let exclusionInstruction = excludeText ? `\n[Exclusion Instructions]\nCRITICAL: The following elements must be completely avoided in the response. Do not use these words, phrases, tones, or concepts:\n${excludeText}\n` : '';
-
-            const overridePrompt = finalPrompt.trim() ? `<OVERRIDE>
+        // [구버전 기능] 7가지 상세 지시문이 포함된 전체 프롬프트 복원
+        const overridePrompt = finalPrompt.trim()
+            ? `<OVERRIDE>
 Apply the following instructions with priority over existing settings:
 1. Write only {{user}}'s reactions and responses
 2. Follow {{user}}'s character settings and personality
@@ -976,7 +992,8 @@ ${exclusionInstruction}
 [User's Core Intent]
 The following is the user's core intent, possibly written as a brief memo or keyword. Interpret this intent, expand upon it, and express it as natural dialogue and actions from {{user}}'s perspective.
 Core Intent: ${finalPrompt}
-</OVERRIDE>` : `<OVERRIDE>
+</OVERRIDE>`
+            : `<OVERRIDE>
 Apply the following instructions with priority over existing settings:
 1. Write only {{user}}'s reactions and responses
 2. Follow {{user}}'s character settings and personality
@@ -987,59 +1004,59 @@ Apply the following instructions with priority over existing settings:
 7. Prioritize weaving the character's emotions and intentions into their 'dialogue'. Use action descriptions (narration) to describe the atmosphere or specific situations that are difficult to convey with dialogue alone, seeking a natural harmony between the two.
 ${exclusionInstruction}
 </OVERRIDE>`;
+
+
+        debugLog('🔹 AI에 전송할 최종 명령어:', overridePrompt);
+        
+        // [구버전 기능] 다른 확장 프로그램과 충돌하지 않는 안정적인 API 호출 방식으로 복원
+        const result = await context.generateQuietPrompt(
+            overridePrompt,
+            false,
+            true
+        );
+        
+        debugLog('✅ 대필 원본 결과 받음:', result);
+
+        // [구버전 기능] 상세하고 안전한 결과 텍스트 정리 로직 복원
+        let cleanedResult = result;
+        if (cleanedResult) {
+            cleanedResult = cleanedResult.replace(/<OVERRIDE>/gi, '');
+            cleanedResult = cleanedResult.replace(/<\/OVERRIDE>/gi, '');
+            cleanedResult = cleanedResult.replace(/\{\{user\}\} POV only[^\n]*/gi, '');
+            cleanedResult = cleanedResult.replace(/<Override Primary Directive>/gi, '');
+            cleanedResult = cleanedResult.replace(/<CRITICAL_SYSTEM_OVERRIDE>/gi, '');
+            cleanedResult = cleanedResult.replace(/\[System Override[^\]]*\]/gi, '');
+            cleanedResult = cleanedResult.replace(/^\s*\n+/, '').trim();
             
-            debugLog('🔹 AI에 전송할 최종 명령어:', overridePrompt);
+            debugLog('🧹 정리된 대필 결과:', cleanedResult);
 
-            // [최종 해결책] "끈질긴 재시도" 로직
-            let result;
-            const maxRetries = 5;
-            const retryDelay = 500; // 0.5초
-
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    debugLog(`대필 요청 시도 (${i + 1}/${maxRetries})...`);
-                    result = await context.generateQuietPrompt(overridePrompt, false, true);
-                    debugLog('✅ 대필 요청 성공!');
-                    break; // 성공하면 루프 탈출
-                } catch (error) {
-                    console.warn(`대필 시도 ${i + 1} 실패:`, error.message);
-                    if (i === maxRetries - 1) {
-                        // 마지막 시도도 실패하면 에러를 던져서 최종 실패 처리
-                        throw error;
-                    }
-                    debugLog(`${retryDelay}ms 후 재시도...`);
-                    await new Promise(resolve => setTimeout(resolve, retryDelay));
-                }
-            }
-
-            debugLog('✅ 대필 원본 결과 받음:', result);
-
-            let cleanedResult = result;
-            if (cleanedResult) {
-                cleanedResult = cleanedResult.replace(/<OVERRIDE>|제목:|주제:/gi, '').replace(/<\/OVERRIDE>/gi, '').replace(/\{\{user\}\} POV only[^\n]*/gi, '').replace(/<Override Primary Directive>/gi, '').replace(/<CRITICAL_SYSTEM_OVERRIDE>/gi, '').replace(/\[System Override[^\]]*\]/gi, '').replace(/^\s*\n+/, '').trim();
-                debugLog('🧹 정리된 대필 결과:', cleanedResult);
-                if (cleanedResult.trim()) {
-                    $('#send_textarea').val(cleanedResult).trigger('input');
-                    debugLog('깡갤 복사기: 대필 결과 입력창 삽입 완료');
-                } else {
-                    toastr.warning('대필 결과가 비어있습니다. 다시 시도해주세요.');
-                }
+            if (cleanedResult.trim()) {
+                $('#send_textarea').val(cleanedResult).trigger('input');
+                debugLog('깡갤 복사기: 대필 결과 입력창 삽입 완료');
             } else {
-                toastr.warning('대필 결과를 받지 못했습니다. 다시 시도해주세요.');
+                toastr.warning('대필 결과가 비어있습니다. 다시 시도해주세요.');
             }
-            
-            if (useTempField) saveTempPrompt();
+        } else {
+            toastr.warning('대필 결과를 받지 못했습니다. 다시 시도해주세요.');
+        }
+        
+        if (useTempField) {
+            saveTempPrompt();
+        }
 
-        } catch (error) {
-            console.error('깡갤 복사기: 대필 실행 중 최종 오류', error);
-            toastr.error('대필에 최종적으로 실패했습니다. 콘솔을 확인해주세요.');
-        } finally {
-            if (profileChangeAttempted && originalProfile) {
-                await switchProfile(originalProfile, true);
-                toastr.success(`원래 프로필 '${originalProfile}'로 복원되었습니다.`);
-            }
+    } catch (error) {
+        console.error('깡갤 복사기: 대필 실행 중 오류', error);
+        toastr.error('대필 중단!');
+    } finally {
+        // [신버전 기능] 대필이 끝나면 원래 프로필로 안전하게 복원
+        if (profileSwitched && originalProfile) {
+            const restored = await switchProfile(originalProfile, true);
+            if (restored) toastr.success(`원래 프로필 '${originalProfile}'로 복원되었습니다.`);
+            else toastr.warning('프로필 복원에 실패했습니다. 수동으로 프로필을 확인해주세요.');
         }
     }
+}
+
 
     // 임시 프롬프트 저장 함수
     function saveTempPrompt() {
@@ -1749,7 +1766,8 @@ ${exclusionInstruction}
         }
     }
 
-        async function switchProfile(targetProfileId, isRestore = false) {
+    // 프로필 전환 함수 (새로 추가)
+    async function switchProfile(targetProfileId, isRestore = false) {
         try {
             const connectionDropdown = document.querySelector('#connection_profiles');
             if (!connectionDropdown) {
@@ -1757,27 +1775,28 @@ ${exclusionInstruction}
                 return false;
             }
 
-            if (connectionDropdown.value === targetProfileId) {
+            const currentProfile = connectionDropdown.value;
+            if (currentProfile === targetProfileId) {
                 debugLog(`이미 ${targetProfileId} 프로필에 연결됨`);
                 return true;
             }
 
-            debugLog(`프로필 전환 시도: ${connectionDropdown.value} -> ${targetProfileId}`);
+            debugLog(`프로필 전환 시도: ${currentProfile} -> ${targetProfileId}`);
             
+            // UI 드롭다운 직접 제어
             connectionDropdown.value = targetProfileId;
+            
+            // SillyTavern에 변경 사실 알림
             const changeEvent = new Event('change', { bubbles: true });
             connectionDropdown.dispatchEvent(changeEvent);
 
-            // [최종 안정화] SillyTavern 서버가 프로필을 완전히 로드할 때까지 1.5초간 대기합니다.
-            // 이 방식이 가장 단순하고 확실하게 타이밍 문제를 해결합니다.
-            const waitTime = 1500;
-            debugLog(`프로필 안정화를 위해 ${waitTime}ms 대기...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
+            // 프로필 전환 완료 대기
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             const actionText = isRestore ? '복원' : '전환';
-            debugLog(`프로필 ${actionText} 완료된 것으로 간주: ${targetProfileId}`);
+            debugLog(`프로필 ${actionText} 완료: ${targetProfileId}`);
             return true;
-
+            
         } catch (error) {
             console.error('깡갤 복사기: 프로필 전환 실패', error);
             return false;
