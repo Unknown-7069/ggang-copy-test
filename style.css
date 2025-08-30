@@ -934,3 +934,75 @@
     transform: none !important;
     box-shadow: none !important;
 }
+
+/* 다중 메시지 삭제 버튼 */
+#copybot_multi_delete_execute {
+    padding: 7px 12px !important;
+    font-weight: bold !important;
+    font-size: 14px !important;
+    background: #E55D5D !important; /* 덜 부담스러운 빨간색 */
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 4px !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 2px rgba(229, 62, 62, 0.2) !important; /* 다른 버튼과 유사한 그림자 */
+    margin-left: 8px !important; /* 간격 조정 */
+}
+
+#copybot_multi_delete_execute:hover:not(:disabled) {
+    background: #c53030 !important; /* 마우스 올리면 살짝 어둡게 */
+    transform: translateY(-1px) !important; /* 살짝 떠오르는 효과 */
+    box-shadow: 0 2px 6px rgba(229, 62, 62, 0.3) !important;
+}
+
+/* 숫자 입력칸의 위/아래 화살표(스피너) 제거 */
+.copybot_panel input[type=number]::-webkit-outer-spin-button,
+.copybot_panel input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Firefox용 스피너 제거 */
+.copybot_panel input[type=number] {
+    -moz-appearance: textfield;
+}
+
+/* style.css 파일 하단에 추가 */
+
+/* 로딩 중일 때 원래 아이콘을 숨기기 위한 클래스 */
+#send_but .copybot-icon-hidden {
+    display: none !important;
+}
+
+/* 새로 추가될 스피너 아이콘의 기본 스타일 */
+#send_but .copybot-spinner {
+    /* 애니메이션은 JS에서 fa-spin으로 제어 */
+    margin: 0; /* 불필요한 여백 제거 */
+    padding: 0; /* 불필요한 여백 제거 */
+}
+
+/* 로딩 중일 때 버튼 자체의 스타일 */
+#send_but.send-button-loading {
+    cursor: wait !important; /* 마우스 커서를 로딩 모양으로 */
+}
+
+/* [개선] 대필 제외 프롬프트 컨테이너 스타일 */
+#copybot_ghostwrite_exclude_container {
+    margin-top: 12px; /* 위쪽 프롬프트와의 간격 */
+    padding: 12px;
+    background: #fff9f9; /* 아주 옅은 붉은 배경색 */
+    border-left: 3px solid #e53e3e; /* 왼쪽 테두리로 강조 */
+    border-radius: 4px;
+}
+
+/* [개선] 대필 제외 프롬프트 라벨 스타일 */
+#copybot_ghostwrite_exclude_container .copybot_settings_label {
+    font-weight: bold;
+    color: #c53030; /* 강조되는 붉은색 텍스트 */
+}
+
+/* [개선] 대필 제외 프롬프트 텍스트박스 포커스 스타일 */
+#copybot_ghostwrite_exclude_textbox:focus {
+    border-color: #e53e3e; /* 포커스 시 테두리 색상 통일 */
+    box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.1) !important;
+}

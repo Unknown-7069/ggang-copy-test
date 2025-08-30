@@ -10,6 +10,10 @@
     const hqProfileCache = new Map(); // 고화질 프로필 캐시용 '메모장'
 	
     let isDebugMode = false;
+	
+	// 대필 진행 상태를 추적하는 변수들
+    let isGhostwritingActive = false;
+    let ghostwriteOriginalProfile = null;
 
     // 디버그 로그 전용 함수
     function debugLog(...args) {
@@ -334,17 +338,19 @@
                             </div>
                             
                             <div class="copybot_settings_item">
+                                <!-- 대필 프롬프트 -->
                                 <div class="copybot_settings_main">
                                     <span class="copybot_settings_label">대필 프롬프트</span>
                                 </div>
                                 <textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="margin-top: 12px; display: none;"></textarea>
-                            </div>
-
-                            <div class="copybot_settings_item" id="copybot_ghostwrite_exclude_container" style="display: none; background-color: rgba(255, 0, 0, 0.05); border-radius: 5px; padding: 5px; margin-top: 5px;">
-                                <div class="copybot_settings_main">
-                                    <span class="copybot_settings_label" style="font-weight: bold; color: #ff6b6b;">대필 제외 프롬프트</span>
+                                
+                                <!-- 제외 프롬프트 (이제 같은 아이템 안에 위치) -->
+                                <div id="copybot_ghostwrite_exclude_container" style="display: none;">
+                                    <div class="copybot_settings_main">
+                                        <span class="copybot_settings_label">대필 제외 프롬프트</span>
+                                    </div>
+                                    <textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
                                 </div>
-                                <textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
                             </div>
                             
                             <div class="copybot_settings_item">
@@ -513,6 +519,27 @@
                         <!-- 기타 설정창 -->
                         <div id="copybot_misc_panel" class="copybot_settings_panel" style="display: none;">
                             
+                        <!-- 다중 메시지 삭제 섹션 -->
+                        <div class="copybot_settings_item">
+                            <div class="copybot_settings_main">
+                                <span class="copybot_settings_label">다중 메세지삭제</span>
+                            </div>
+                            <div class="copybot_input_row" style="margin-top: 8px; align-items: center;">
+                                <div class="copybot_input_group">
+                                    <label for="copybot_multi_delete_start">시작 위치:</label>
+                                    <input type="number" id="copybot_multi_delete_start" placeholder="0" min="0" class="text_pole">
+                                </div>
+                                <div class="copybot_input_group">
+                                    <label for="copybot_multi_delete_end">종료 위치:</label>
+                                    <input type="number" id="copybot_multi_delete_end" placeholder="10" min="0" class="text_pole">
+                                </div>
+                                <button id="copybot_multi_delete_execute" class="menu_button">삭제</button>
+                            </div>
+                            <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
+                                지정된 범위의 메시지를 영구적으로 삭제합니다.<br><strong>실행 전 반드시 백업하세요.</strong>
+                            </div>
+                        </div>							
+							
                             <div class="copybot_settings_item">
                                 <div class="copybot_settings_main">
                                     <span class="copybot_settings_label">고화질 프로필 사진</span>
@@ -521,7 +548,7 @@
                                     </button>
                                 </div>
                                 <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
-                                    프로필 사진을 고화질로 표시합니다.<br><small>이 옵션을 이용하는 것보다 SillyTavern의 <code>config.yaml</code> 파일에서 <code>thumbnails</code> 섹션의 <code>enabled</code> 값을 <code>true</code>에서 <code>false</code>로 변경하는 게 여러모로 훨씬 좋습니다. 파일 수정이 어려운 이용자를 위한 옵션입니다.</small>
+                                    프로필 사진을 고화질로 표시합니다.<br><small>이 옵션을 이용하는 것보다 SillyTavern의 <code>config.yaml</code> 파일에서 <code>thumbnails</code> 섹션의 <code>enabled</code> 값을 <code>true</code>에서 <code>false</code>로 변경하는 게 여러모로 훨씬 좋습니다. 파일 수정이 어려운 이용자를 위한 옵션입니다. 구형 기기를 사용할 경우 페이지 로딩 후 몇 초간 기니피그 한마리만큼의 성능 저하가 발생하며, 그 이후로는 햄스터 꼬리털 세포만큼의 성능 저하가 있습니다.</small>
                                 </div>
                             </div>
                             
@@ -536,7 +563,7 @@
                                     채팅 입력창의 크기 조절 핸들을 제거합니다.
                                 </div>
                             </div>
-                            
+						
                             <div class="copybot_settings_item">
                                 <div class="copybot_settings_main">
                                     <span class="copybot_settings_label">디버그 모드</span>
@@ -545,9 +572,11 @@
                                     </button>
                                 </div>
                                 <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
-                                    문제 해결을 위해 콘솔에 자세한 로그를 출력합니다. 이게 뭔지 모른다면 키지마세요! 근데 켜도 크게 상관은 없습니다.
+                                    문제 해결을 위해 콘솔에 자세한 로그를 출력합니다. 이게 뭔지 모른다면 키지마세요! 근데 켜도 크게 상관은 없습니다. 개미 더듬이 세포 하나만큼의 성능 저하가 발생합니다.
                                 </div>
-                            </div>
+								<div id="copybot_debug_info" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e9ecef; font-size: 11px; color: #6c757d; line-height: 1.6;">
+                                    <div style="margin: 0 0 4px 0;">SillyTavern release 1.13.3 기준으로 작업되었음.</div>
+<div>깃헙링크: <a href="https://github.com/Unknown-7069/ggang-copy-test" target="_blank" rel="noopener noreferrer" style="color: #4299e1; text-decoration: none;">https://github.com/Unknown-7069/ggang-copy-test</a></div>                            </div>
                             
                         </div>
                     </div>
@@ -750,6 +779,12 @@
                 $('#copybot_remove_resize_toggle').attr('data-enabled', removeResizeEnabled).text(removeResizeEnabled ? 'ON' : 'OFF');
                 $('#copybot_debug_mode_toggle').attr('data-enabled', isDebugMode).text(isDebugMode ? 'ON' : 'OFF');
 
+				if (isDebugMode) {
+					$('#copybot_debug_info').show();
+				} else {
+					$('#copybot_debug_info').hide();
+				}
+
                 // 고화질 프로필 설정 적용
                 if (hqProfileEnabled) {
                     enableHighQualityProfiles();
@@ -911,12 +946,20 @@
         }
     }
 
-    // **간단한 최우선순위 방식: 100% 안전한 대필 실행 함수 (사용자 설정 건드리지 않음 + 토큰 절약)**
-                async function executeGhostwrite() {
+        // **간단한 최우선순위 방식: 100% 안전한 대필 실행 함수 (사용자 설정 건드리지 않음 + 토큰 절약)**
+    async function executeGhostwrite() {
         let originalProfile = null;
         let profileChangeAttempted = false;
+		
+		const sendButton = document.querySelector('#send_but');
+		const sendIcon = sendButton ? sendButton.querySelector('i.fa-solid') : null;
+		
+		const rightSendForm = document.querySelector('#rightSendForm');		
 
         try {
+            isGhostwritingActive = true;
+            ghostwriteOriginalProfile = null;
+
             const promptText = ($('#copybot_ghostwrite_textbox').val() || '').trim();
             const excludeText = ($('#copybot_ghostwrite_exclude_textbox').val() || '').trim();
             const useTempField = $('#copybot_temp_field_toggle').attr('data-enabled') === 'true';
@@ -941,20 +984,44 @@
             toastr.info(requestMessage);
 
             debugLog('🎭 깡갤 복사기: 대필 시작');
+			
+            if (rightSendForm) {
+                const formWidth = rightSendForm.getBoundingClientRect().width;
+                if (formWidth > 0) {
+                    rightSendForm.style.minWidth = `${formWidth}px`;
+                }
+            }
+            if (sendButton && sendIcon) {
+                sendButton.disabled = true;
+                sendIcon.style.display = 'none';
+                const spinner = document.createElement('i');
+                spinner.className = 'fa-solid fa-spinner fa-spin';
+                spinner.style.fontSize = window.getComputedStyle(sendIcon).fontSize;
+                spinner.style.color = window.getComputedStyle(sendIcon).color;
+                sendButton.appendChild(spinner);
+            }
 
             const selectedProfile = $('#copybot_ghostwrite_profile_select').val();
+			const selectedProfileName = $('#copybot_ghostwrite_profile_select option:selected').text(); // 선택된 옵션의 '이름'을 가져옵니다.
+
             if (selectedProfile && selectedProfile !== 'default') {
                 const connectionDropdown = document.querySelector('#connection_profiles');
                 if (connectionDropdown) {
                     originalProfile = connectionDropdown.value;
+                    ghostwriteOriginalProfile = originalProfile; 
+
                     if (originalProfile !== selectedProfile) {
                         profileChangeAttempted = true;
                         await switchProfile(selectedProfile);
-                if (isDebugMode) {
-                    toastr.success(`대필 전용 프로필 '${selectedProfile}'로 전환되었습니다.`);
+                        if (isDebugMode) {
+                            toastr.success(`대필 전용 프로필 '${selectedProfileName}'로 전환되었습니다.`);
                         }
                     }
                 }
+            }
+
+            if (!isGhostwritingActive) {
+                throw new Error('User cancelled during profile switch.');
             }
             
             const context = window.SillyTavern.getContext();
@@ -967,47 +1034,56 @@
             let exclusionInstruction = excludeText ? `\n[Exclusion Instructions]\nCRITICAL: The following elements must be completely avoided in the response. Do not use these words, phrases, tones, or concepts:\n${excludeText}\n` : '';
 
             const overridePrompt = finalPrompt.trim() ? `<OVERRIDE>
-Apply the following instructions with priority over existing settings:
-1. Write only {{user}}'s reactions and responses
-2. Follow {{user}}'s character settings and personality
-3. Do not use system messages
-4. Do not repeat or quote sentences or expressions from previous responses
-5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
-6. Before writing, briefly recall {{user}}'s established personality, speech patterns, and their relationship with the other character to ensure perfect consistency.
-7. Prioritize weaving the character's emotions and intentions into their 'dialogue'. Use action descriptions (narration) to describe the atmosphere or specific situations that are difficult to convey with dialogue alone, seeking a natural harmony between the two.
-${exclusionInstruction}
-[User's Core Intent]
-The following is the user's core intent, possibly written as a brief memo or keyword. Interpret this intent, expand upon it, and express it as natural dialogue and actions from {{user}}'s perspective.
-Core Intent: ${finalPrompt}
-</OVERRIDE>` : `<OVERRIDE>
-Apply the following instructions with priority over existing settings:
-1. Write only {{user}}'s reactions and responses
-2. Follow {{user}}'s character settings and personality
-3. Do not use system messages
-4. Do not repeat or quote sentences or expressions from previous responses
-5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
-6. Before writing, briefly recall {{user}}'s established personality, speech patterns, and their relationship with the other character to ensure perfect consistency.
-7. Prioritize weaving the character's emotions and intentions into their 'dialogue'. Use action descriptions (narration) to describe the atmosphere or specific situations that are difficult to convey with dialogue alone, seeking a natural harmony between the two.
-${exclusionInstruction}
-</OVERRIDE>`;
+				Apply the following instructions with priority over existing settings:
+				1. Write only {{user}}'s reactions and responses
+				2. Follow {{user}}'s character settings and personality
+				3. Do not use system messages
+				4. Do not repeat or quote sentences or expressions from previous responses
+				5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
+				6. Before writing, briefly recall {{user}}'s established personality, speech patterns, and their relationship with the other character to ensure perfect consistency.
+				7. Prioritize weaving the character's emotions and intentions into their 'dialogue'. Use action descriptions (narration) to describe the atmosphere or specific situations that are difficult to convey with dialogue alone, seeking a natural harmony between the two.
+				${exclusionInstruction}
+				[User's Core Intent]
+				The following is the user's core intent, possibly written as a brief memo or keyword. Interpret this intent, expand upon it, and express it as natural dialogue and actions from {{user}}'s perspective.
+				Core Intent: ${finalPrompt}
+				</OVERRIDE>` : `<OVERRIDE>
+				Apply the following instructions with priority over existing settings:
+				1. Write only {{user}}'s reactions and responses
+				2. Follow {{user}}'s character settings and personality
+				3. Do not use system messages
+				4. Do not repeat or quote sentences or expressions from previous responses
+				5. Use appropriate paragraph breaks, but merge consecutive dialogue without actions or descriptions into single sentences
+				6. Before writing, briefly recall {{user}}'s established personality, speech patterns, and their relationship with the other character to ensure perfect consistency.
+				7. Prioritize weaving the character's emotions and intentions into their 'dialogue'. Use action descriptions (narration) to describe the atmosphere or specific situations that are difficult to convey with dialogue alone, seeking a natural harmony between the two.
+				${exclusionInstruction}
+				</OVERRIDE>`;
             
             debugLog('🔹 AI에 전송할 최종 명령어:', overridePrompt);
 
-            // [최종 해결책] "끈질긴 재시도" 로직
             let result;
             const maxRetries = 3;
-            const retryDelay = 1500; // 1.5초
+            const retryDelay = 1500;
 
             for (let i = 0; i < maxRetries; i++) {
+                if (!isGhostwritingActive) {
+                    // isGhostwritingActive가 false이면, 에러를 던져서 for 루프를 즉시 탈출
+                    throw new Error('User cancelled before API call.');
+                }
                 try {
                     debugLog(`대필 요청 시도 (${i + 1}/${maxRetries})...`);
                     result = await context.generateQuietPrompt(overridePrompt, false, true);
                     debugLog('✅ 대필 요청 성공!');
                     break; // 성공하면 루프 탈출
                 } catch (error) {
-                    console.warn(`대필 시도 ${i + 1} 실패:`, error.message);
+                    const errorMessage = String(error);
+                    console.warn(`대필 시도 ${i + 1} 실패:`, errorMessage);
+
+                    // [핵심 수정] 사용자가 중단한 경우, 재시도하지 않고 즉시 루프를 빠져나감
+                    if (!isGhostwritingActive || errorMessage.includes('Clicked stop button')) {
+                        throw error; // 에러를 상위 catch 블록으로 던져서 루프를 완전히 중단
+                    }
+
                     if (i === maxRetries - 1) {
-                        // 마지막 시도도 실패하면 에러를 던져서 최종 실패 처리
                         throw error;
                     }
                     debugLog(`${retryDelay}ms 후 재시도...`);
@@ -1027,29 +1103,59 @@ ${exclusionInstruction}
                 } else {
                     toastr.warning('대필 결과가 비어있습니다. 다시 시도해주세요.');
                 }
-            } else {
+            } else if (isGhostwritingActive) {
                 toastr.warning('대필 결과를 받지 못했습니다. 다시 시도해주세요.');
             }
             
             if (useTempField) saveTempPrompt();
 
         } catch (error) {
-            console.error('깡갤 복사기: 대필 실행 중 최종 오류', error);
-            toastr.error('대필에 최종적으로 실패했습니다. 콘솔을 확인해주세요.');
+            const errorString = String(error);
+            
+            if (errorString.includes('User cancelled') || errorString.includes('Clicked stop button')) {
+                debugLog('🚫 깡갤 복사기: 대필 작업이 사용자에 의해 중단되었습니다.');
+                toastr.info('대필 요청이 중단되었습니다.');
+            } else {
+                console.error('깡갤 복사기: 대필 실행 중 최종 오류', error);
+                toastr.error('대필에 최종적으로 실패했습니다. 콘솔을 확인해주세요.');
+            }
         } finally {
             if (profileChangeAttempted && originalProfile) {
-                await switchProfile(originalProfile, true); // 원래 프로필로 복원
-                
-                // 서버가 상태를 재설정할 시간을 주기 위해 1초간 추가 대기합니다.
-                debugLog('프로필 복원 후 안정화를 위해 1000ms 추가 대기...');
-                await new Promise(resolve => setTimeout(resolve, 1000)); 
+				try {
+					debugLog(`프로필 원복 시도: ${originalProfile}`);
+					await switchProfile(originalProfile, true); // 프로필 원복 시도
+					
+					// 원복 성공 메시지는 디버그 모드에서만 표시
+					const originalProfileName = $(`#connection_profiles option[value="${originalProfile}"]`).text(); // 원래 프로필의 '이름'을 찾아서 가져옵니다.
+					if (isDebugMode) {
+						toastr.success(`원래 프로필 '${originalProfileName}'로 복원되었습니다.`);
+					}
+				} catch (restoreError) {
+					// 만약 위에서 프로필 원복 시도가 실패하면 여기가 실행됩니다.
+					console.error('!!! 치명적 오류: 프로필 원복에 실패했습니다 !!!', restoreError);
+					toastr.error('프로필이 원래대로 복원되지 않았습니다! 수동으로 확인해주세요.');
+				}
+			}
 
-                if (isDebugMode) {
-                    toastr.success(`원래 프로필 '${originalProfile}'로 복원되었습니다.`);
-                }
+			
+			if (rightSendForm) {
+                rightSendForm.style.minWidth = '';
             }
+
+            isGhostwritingActive = false;
+            ghostwriteOriginalProfile = null;
+            
+            if (sendButton) {
+                sendButton.disabled = false;
+                const spinner = sendButton.querySelector('i.fa-spinner');
+                if (spinner) spinner.remove();
+                if (sendIcon) sendIcon.style.display = '';
+            }
+
         }
     }
+
+
 
     // 임시 프롬프트 저장 함수
     function saveTempPrompt() {
@@ -1472,6 +1578,36 @@ ${exclusionInstruction}
     function setupEventHandlers() {
         debugLog('깡갤 복사기: 이벤트 핸들러 설정 시작');
         
+		// 대필이 진행중일 때 중단 버튼을 누르면 작동하는 코드
+        $(document).off('click', '#send_but.generation_progress').on('click', '#send_but.generation_progress', function() {
+            if (isGhostwritingActive) {
+                debugLog('대필 중단 버튼 클릭 감지! 중단 신호 보냅니다.');
+                
+                // 1. 중단 플래그를 false로 변경하여 모든 루프가 멈추도록 함
+                isGhostwritingActive = false; 
+
+                // 2. SillyTavern의 자체 중단 기능을 강제로 호출
+                // 이 부분이 실질적으로 await 상태를 깨우는 역할을 합니다.
+                try {
+                    // 전역에 있는 stopGeneration 함수를 찾아 직접 실행
+                    if (typeof window.stopGeneration === 'function') {
+                        window.stopGeneration();
+                        debugLog('SillyTavern의 stopGeneration() 함수를 직접 호출했습니다.');
+                    }
+                } catch (e) {
+                    console.error('stopGeneration 호출 실패', e);
+                }
+                
+                // 3. 즉시 프로필 원복 시도
+                if (ghostwriteOriginalProfile) {
+                    debugLog(`즉시 프로필 원복 시도: ${ghostwriteOriginalProfile}`);
+                    switchProfile(ghostwriteOriginalProfile, true);
+                    toastr.info('대필을 중단하고 원래 프로필로 복원합니다.');
+                }
+            }
+        });
+
+		
         const eventMap = {
             '#copybot_execute': () => {
                 let startPos = parseInt($("#copybot_start").val());
@@ -1523,6 +1659,44 @@ ${exclusionInstruction}
                 if (startPos > endPos) { toastr.error('시작위치는 종료위치보다 작아야 합니다.'); return; }
                 if (startPos < 0) { toastr.error('시작위치는 0 이상이어야 합니다.'); return; }
                 executeCopyCommand(startPos, endPos);
+            },
+
+			            '#copybot_multi_delete_execute': () => {
+                // 1. 입력된 시작위치와 종료위치 값을 가져옵니다.
+                const startPos = parseInt($("#copybot_multi_delete_start").val());
+                const endPos = parseInt($("#copybot_multi_delete_end").val());
+
+                // 2. 입력값이 숫자가 아니거나 비어있는지 확인합니다.
+                if (isNaN(startPos) || isNaN(endPos)) {
+                    toastr.error('올바른 시작위치와 종료위치를 숫자로 입력해주세요.');
+                    return; // 함수를 중단합니다.
+                }
+
+                // 3. 시작위치가 종료위치보다 크거나 음수인지 확인합니다.
+                if (startPos < 0) {
+                    toastr.error('시작위치는 0 이상이어야 합니다.');
+                    return;
+                }
+                if (startPos > endPos) {
+                    toastr.error('시작위치는 종료위치보다 작거나 같아야 합니다.');
+                    return;
+                }
+
+                // 4. (가장 중요) 사용자에게 최종 확인을 받습니다.
+                const messageCount = endPos - startPos + 1;
+                const confirmation = confirm(
+                    `메시지 #${startPos}부터 #${endPos}까지, 총 ${messageCount}개를 영구적으로 삭제합니다.\n\n` +
+                    `이 작업은 되돌릴 수 없습니다!\n\n` +
+                    `정말로 삭제하시겠습니까?`
+                );
+
+                // 5. 사용자가 '확인'을 누른 경우에만 삭제 명령을 실행합니다.
+                if (confirmation) {
+                    const command = `/cut ${startPos}-${endPos}`;
+                    executeSimpleCommand(command, `메시지 ${startPos}~${endPos} 삭제 명령을 실행했습니다.`);
+                } else {
+                    toastr.info('메시지 삭제가 취소되었습니다.');
+                }
             },
 
             '#copybot_linebreak_fix': () => {
@@ -1626,6 +1800,16 @@ ${exclusionInstruction}
                         restoreResizeHandle();
                         toastr.info('입력창 조절점이 복원되었습니다.');
                     }
+				} else if (button.attr('id') === 'copybot_debug_mode_toggle') {
+                    // 디버그 모드 토글 처리
+                    isDebugMode = !isEnabled;
+                    if (!isEnabled) { // 새로 켜진 경우
+                        $('#copybot_debug_info').slideDown(200);
+						debugLog('깡갤 복사기: 디버그 모드가 활성화되었습니다.');
+                    } else { // 꺼진 경우
+                        console.log('🐞 깡갤 복사기: 디버그 모드가 비활성화되었습니다.');
+                        $('#copybot_debug_info').slideUp(200);
+                    }	
                 } else {
                     const targetPanel = $(`#${button.attr('id').replace('_toggle', '_options')}`);
                     targetPanel.slideToggle(!isEnabled);
