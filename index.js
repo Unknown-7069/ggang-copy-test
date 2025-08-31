@@ -212,18 +212,18 @@
 		// 현재 SillyTavern 서버 주소를 동적으로 감지
 		const serverBaseUrl = `${window.location.protocol}//${window.location.host}`;
 
-        // 페르소나 썸네일 처리
-        if (originalSrc.includes('/thumbnail?type=persona&file=')) {
-            const fileName = originalSrc.split('file=')[1];
-            newSrc = `http://127.0.0.1:59927/User%20Avatars/${fileName}`;
-        }
-        // 아바타 썸네일 처리
-        else if (originalSrc.includes('/thumbnail?type=avatar&file=')) {
-            const fileName = originalSrc.split('file=')[1];
-            const decodedFileName = decodeURIComponent(fileName);
-            const characterName = decodedFileName.replace('.png', '').replace('.jpg', '').replace('.webp', '');
-            newSrc = `http://127.0.0.1:59927/characters/${characterName}/${decodedFileName}`;
-        }
+		// 페르소나 썸네일 처리
+		if (originalSrc.includes('/thumbnail?type=persona&file=')) {
+			const fileName = originalSrc.split('file=')[1];
+			newSrc = `${serverBaseUrl}/User%20Avatars/${fileName}`;
+		}
+		// 아바타 썸네일 처리
+		else if (originalSrc.includes('/thumbnail?type=avatar&file=')) {
+			const fileName = originalSrc.split('file=')[1];
+			const decodedFileName = decodeURIComponent(fileName);
+			const characterName = decodedFileName.replace('.png', '').replace('.jpg', '').replace('.webp', '');
+			newSrc = `${serverBaseUrl}/characters/${characterName}/${decodedFileName}`;
+		}
 
         if (newSrc) {
             // 2. 캐시에 결과가 없으면, 네트워크 확인을 진행합니다. (이 과정은 이제 썸네일당 한 번만 실행됩니다)
