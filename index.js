@@ -7,6 +7,7 @@
     console.log('🔥 깡갤 복사기: 스크립트 로드 시작!');
 
     let isInitialized = false;
+	let isPresetEditMode = false; // 대필 프리셋 편집 추적 변수
     const hqProfileCache = new Map(); // 고화질 프로필 캐시용 '메모장'
 	
     let isDebugMode = false;
@@ -208,6 +209,9 @@
 
         let newSrc = null;
 
+		// 현재 SillyTavern 서버 주소를 동적으로 감지
+		const serverBaseUrl = `${window.location.protocol}//${window.location.host}`;
+
         // 페르소나 썸네일 처리
         if (originalSrc.includes('/thumbnail?type=persona&file=')) {
             const fileName = originalSrc.split('file=')[1];
@@ -338,21 +342,64 @@
                             </div>
                             
                             <div class="copybot_settings_item">
-                                <!-- 대필 프롬프트 -->
-                                <div class="copybot_settings_main">
-                                    <span class="copybot_settings_label">대필 프롬프트</span>
-                                </div>
-                                <textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="margin-top: 12px; display: none;"></textarea>
-                                
-                                <!-- 제외 프롬프트 (이제 같은 아이템 안에 위치) -->
-                                <div id="copybot_ghostwrite_exclude_container" style="display: none;">
-                                    <div class="copybot_settings_main">
-                                        <span class="copybot_settings_label">대필 제외 프롬프트</span>
-                                    </div>
-                                    <textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
-                                </div>
+                            <!-- 대필 프롬프트 및 프리셋 섹션 -->
+
+                                <!-- 프리셋 프롬프트 및 프리셋 섹션 -->
+								<div id="copybot_preset_row" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+									<!-- 드롭다운과 이름 변경 입력창을 감싸는 래퍼 -->
+									<div id="copybot_preset_name_wrapper" style="flex-grow: 1; position: relative;">
+										<select id="copybot_preset_select" class="text_pole" style="width: 100%;">
+											<option value="">기본 프리셋</option>
+											<!-- 자바스크립트로 프리셋 목록이 여기에 추가됩니다 -->
+										</select>
+										<input type="text" id="copybot_preset_rename_input" class="text_pole" style="width: 100%; display: none;" placeholder="프리셋 이름 입력..."/>
+									</div>
+									<div id="copybot_preset_buttons" style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+										<!-- 일반 모드 아이콘 -->
+										<i id="copybot_preset_save" class="fa-solid fa-save copybot_icon_button" title="현재 프롬프트를 새 프리셋으로 저장"></i>
+										<i id="copybot_preset_edit" class="fa-solid fa-edit copybot_icon_button" title="프리셋 편집 모드 시작"></i>
+										<!-- 편집 모드 아이콘 (처음에는 숨김) -->
+										<i id="copybot_preset_confirm" class="fa-solid fa-check copybot_icon_button" title="변경사항 저장" style="display:none; color: #48bb78;"></i>
+										<i id="copybot_preset_delete" class="fa-solid fa-trash-alt copybot_icon_button" title="선택한 프리셋 삭제" style="display:none; color: #e53e3e;"></i>
+										<i id="copybot_preset_cancel" class="fa-solid fa-times copybot_icon_button" title="편집 취소" style="display:none;"></i>
+									</div>
+								</div>
+
+								<!-- 대필 프롬프트 영역 전체 컨테이너 -->
+								<div id="copybot_prompt_container">
+									<!-- "대필 프롬프트" 라벨 -->
+									<div class="copybot_settings_main" style="margin-bottom: 8px;">
+										<span class="copybot_settings_label">대필 프롬프트</span>
+									</div>
+									
+									<!-- 대필 프롬프트 텍스트박스 -->
+									<textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="display: block;"></textarea>
+									
+									<!-- 대필 제외 프롬프트 컨테이너 -->
+									<div id="copybot_ghostwrite_exclude_container" style="display: block; margin-top: 12px;">
+										<div class="copybot_settings_main">
+											<span class="copybot_settings_label">대필 제외 프롬프트</span>
+										</div>
+										<textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
+									</div>
+									
+									<!-- 프리셋 순서 변경 UI - 프롬프트 컨테이너 내부로 이동 -->
+									<div id="copybot_reorder_overlay" style="display: none;">
+										<div id="copybot_reorder_panel">
+											<h5>프리셋 순서 변경</h5>
+											<small>항목을 드래그하여 순서를 변경하세요.</small>
+											<ul id="copybot_reorder_list">
+												<!-- JS로 프리셋 목록이 채워집니다 -->
+											</ul>
+											<div id="copybot_reorder_buttons">
+												<button id="copybot_reorder_save" class="copybot_textbox_button">저장</button>
+												<button id="copybot_reorder_cancel" class="copybot_textbox_button copybot_clear_button">취소</button>
+											</div>
+										</div>
+									</div>
+								</div>
                             </div>
-                            
+							
                             <div class="copybot_settings_item">
                                 <div class="copybot_settings_main">
                                     <span class="copybot_settings_label">대필 버튼 위치</span>
@@ -415,6 +462,7 @@
                             </div>
                         </div>
 					</div>
+	
                         <!-- 편의기능 설정창 -->
                         <div id="copybot_settings_panel" class="copybot_settings_panel" style="display: none;">
                             
@@ -1574,318 +1622,622 @@
         }
     }
 
+		// =======================================================
+		// 프리셋 관리 기능 (localStorage 기반) - 수정된 버전
+		// =======================================================
+
+		// 유틸리티: HTML 특수문자 처리
+		function escapeHtml(str) {
+			if (typeof str !== 'string') return '';
+			return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+		}
+
+		// localStorage에서 프리셋 목록을 가져오는 함수
+		function getPresets() {
+			try {
+				const presetsJSON = localStorage.getItem('copybot_presets');
+				return presetsJSON ? JSON.parse(presetsJSON) : [];
+			} catch (e) {
+				console.error("프리셋 로딩 실패:", e);
+				return [];
+			}
+		}
+
+		// localStorage에 프리셋 목록을 저장하는 함수
+		function savePresets(presets) {
+			try {
+				localStorage.setItem('copybot_presets', JSON.stringify(presets));
+			} catch (e) {
+				console.error("프리셋 저장 실패:", e);
+			}
+		}
+
+		// 선택한 프리셋의 내용을 프롬프트 창에 불러오는 함수
+		function loadPreset(presetName) {
+			if (!presetName) {
+				$('#copybot_ghostwrite_textbox').val('');
+				$('#copybot_ghostwrite_exclude_textbox').val('');
+				return;
+			}
+			const presets = getPresets();
+			const preset = presets.find(p => p.name === presetName);
+			if (preset) {
+				$('#copybot_ghostwrite_textbox').val(preset.prompt);
+				$('#copybot_ghostwrite_exclude_textbox').val(preset.excludePrompt);
+			}
+		}
+
+		// 현재 프롬프트 내용을 저장하는 함수 (덮어쓰기 또는 새로 저장)
+		function saveCurrentPreset() {
+			const selectedName = $('#copybot_preset_select').val();
+			let presets = getPresets();
+
+			if (selectedName) { // 시나리오 1: 프리셋이 선택되어 있을 때 (업데이트)
+				const presetToUpdate = presets.find(p => p.name === selectedName);
+				if (presetToUpdate) {
+					presetToUpdate.prompt = $('#copybot_ghostwrite_textbox').val();
+					presetToUpdate.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+					savePresets(presets);
+					toastr.success(`'${escapeHtml(selectedName)}' 프리셋이 업데이트되었습니다.`);
+				} else {
+					toastr.error(`'${escapeHtml(selectedName)}' 프리셋을 찾지 못해 업데이트에 실패했습니다.`);
+				}
+			} else { // 시나리오 2: "프리셋 없음"일 때 (새로 저장)
+				let name = prompt("저장할 새 프리셋의 이름을 입력하세요:", "");
+				if (!name || name.trim() === '') {
+					if (name !== null) toastr.warning("프리셋 이름은 비워둘 수 없습니다.");
+					return;
+				}
+				name = name.trim();
+				const existingPreset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
+				if (existingPreset) {
+					if (!confirm(`'${existingPreset.name}' 프리셋이 이미 존재합니다. 덮어쓰시겠습니까?`)) return;
+					existingPreset.prompt = $('#copybot_ghostwrite_textbox').val();
+					existingPreset.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+					toastr.success(`'${existingPreset.name}' 프리셋을 덮어썼습니다.`);
+				} else {
+					presets.push({ name: name, prompt: $('#copybot_ghostwrite_textbox').val(), excludePrompt: $('#copybot_ghostwrite_exclude_textbox').val() });
+					toastr.success(`'${name}' 프리셋을 새로 저장했습니다.`);
+				}
+				savePresets(presets);
+				updatePresetDropdown();
+				$('#copybot_preset_select').val(name);
+			}
+		}
+
+		// 프리셋 이름 변경 함수
+		function renamePreset(oldName, newName) {
+			let presets = getPresets();
+			if (presets.some(p => p.name.toLowerCase() === newName.toLowerCase() && p.name.toLowerCase() !== oldName.toLowerCase())) {
+				toastr.error(`'${newName}' 이름은 이미 사용 중입니다.`);
+				return false;
+			}
+			const preset = presets.find(p => p.name === oldName);
+			if (preset) {
+				preset.name = newName;
+				savePresets(presets);
+				return true;
+			}
+			return false;
+		}
+
+		// 프리셋 삭제 함수
+		function deletePreset(nameToDelete) {
+			let presets = getPresets();
+			savePresets(presets.filter(p => p.name !== nameToDelete));
+			loadPreset('');
+		}
+
+		// 새 프리셋 추가 함수
+		function addNewPreset() {
+			let presets = getPresets();
+			let newNameBase = "새 프리셋";
+			let newName = newNameBase;
+			let counter = 1;
+			while (presets.some(p => p.name === newName)) {
+				newName = `${newNameBase} ${++counter}`;
+			}
+			presets.push({ name: newName, prompt: "", excludePrompt: "" });
+			savePresets(presets);
+			updatePresetDropdown();
+			$('#copybot_preset_select').val(newName);
+			loadPreset(newName);
+			enterPresetEditMode();
+		}
+
+		// 현재 프리셋을 복사하는 함수
+		function copyCurrentPreset() {
+			const originalName = $('#copybot_preset_select').val();
+			let presets = getPresets();
+			
+			if (!originalName) {
+				// "프리셋 없음" 상태일 때 - 현재 입력된 내용으로 새 프리셋 생성
+				const currentPrompt = $('#copybot_ghostwrite_textbox').val();
+				const currentExcludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+				
+				let newName = "복사된 프리셋 (1)";
+				let counter = 1;
+				while (presets.some(p => p.name === newName)) {
+					counter++;
+					newName = `복사된 프리셋 (${counter})`;
+				}
+				
+				const newPreset = { 
+					name: newName, 
+					prompt: currentPrompt || '', 
+					excludePrompt: currentExcludePrompt || '' 
+				};
+				// "기본 프리셋" 상태에서는 맨 끝에 추가
+				presets.push(newPreset);
+				savePresets(presets);
+				toastr.success(`현재 입력 내용이 '${escapeHtml(newName)}'으로 저장되었습니다.`);
+				updatePresetDropdown();
+				$('#copybot_preset_select').val(newName);
+				return;
+			}
+			
+			const originalPreset = presets.find(p => p.name === originalName);
+			if (!originalPreset) {
+				toastr.error("원본 프리셋을 찾을 수 없습니다.");
+				return;
+			}
+			let newName = `${originalName} (1)`;
+			let counter = 1;
+			while (presets.some(p => p.name === newName)) {
+				counter++;
+				newName = `${originalName} (${counter})`;
+			}
+			const newPreset = { name: newName, prompt: originalPreset.prompt, excludePrompt: originalPreset.excludePrompt };
+			const originalIndex = presets.findIndex(p => p.name === originalName);
+			
+			// 원본 프리셋의 바로 다음 위치에 삽입
+			if (originalIndex !== -1) {
+				presets.splice(originalIndex + 1, 0, newPreset);
+			} else {
+				// 혹시 원본을 못 찾으면 맨 끝에 추가
+				presets.push(newPreset);
+			}
+			
+			savePresets(presets);
+			toastr.success(`'${escapeHtml(newName)}'으로 복사되었습니다.`);
+			updatePresetDropdown();
+			$('#copybot_preset_select').val(newName);
+		}
+
+		// 프리셋 순서 변경 함수
+		function reorderPresets(newOrderNameArray) {
+			const presets = getPresets();
+			const reorderedPresets = newOrderNameArray.map(name => presets.find(p => p.name === name)).filter(Boolean);
+			savePresets(reorderedPresets);
+		}
+
+		// --- UI 제어 함수들 ---
+
+		let draggedItem = null;
+
+		// 프리셋 드롭다운을 최신 상태로 업데이트하는 중앙 함수
+		function updatePresetDropdown() {
+			const presets = getPresets();
+			const select = $('#copybot_preset_select');
+			const selectedValue = select.val(); // 현재 선택된 값 기억
+
+			// 1. 드롭다운 메뉴를 완전히 새로 구성합니다.
+			select.empty();
+			select.append('<option value="">기본 프리셋</option>');
+
+			presets.forEach(preset => {
+				select.append($('<option>', { value: preset.name, text: escapeHtml(preset.name) }));
+			});
+
+			// 2. 관리 메뉴를 항상 추가합니다.
+			select.append('<option value="" disabled>──────────</option>');
+			select.append('<option value="__add__" class="copybot_preset_management_option">+ 새 프리셋 추가</option>');
+			
+			// 프리셋이 2개 이상일 때만 순서 변경 기능 표시
+			if (presets.length > 1) {
+				select.append('<option value="__reorder__" class="copybot_preset_management_option">+ 프리셋 순서 변경</option>');
+			}
+			
+			// "현재 프리셋 복사" 기능을 항상 표시
+			select.append('<option value="__copy__" class="copybot_preset_management_option">+ 현재 프리셋 복사</option>');
+			
+			// 3. 이전에 선택했던 값을 그대로 다시 선택해줍니다.
+			select.val(selectedValue);
+			
+			// 4. 현재 선택된 값을 data 속성에 저장 (관리 메뉴에서 복원용)
+			select.data('previousValue', selectedValue);
+		}
+
+
+		// 편집 모드 진입
+		function enterPresetEditMode() {
+			isPresetEditMode = true;
+			const selectedPresetName = $('#copybot_preset_select').val();
+			$('#copybot_preset_save, #copybot_preset_edit').hide();
+			$('#copybot_preset_confirm, #copybot_preset_cancel').show();
+			if (selectedPresetName) $('#copybot_preset_delete').show();
+			$('#copybot_preset_select').hide();
+			$('#copybot_preset_rename_input').val(selectedPresetName).show().trigger('focus');
+			$('#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').prop('disabled', true);
+		}
+		
+		// 프리셋 편집 버튼 상태 업데이트
+		function updatePresetEditButtonState() {
+			const selectedPreset = $('#copybot_preset_select').val();
+			const editButton = $('#copybot_preset_edit');
+			
+			if (!selectedPreset) {
+				// 기본 프리셋 선택 시 편집 버튼 비활성화
+				editButton.addClass('disabled').attr('title', '기본 프리셋은 편집할 수 없습니다');
+			} else {
+				// 다른 프리셋 선택 시 편집 버튼 활성화
+				editButton.removeClass('disabled').attr('title', '프리셋 편집 모드 시작');
+			}
+		}
+
+		// 편집 모드 종료
+		function exitPresetEditMode(forceUpdate = false) {
+			if (!isPresetEditMode && !forceUpdate) return;
+			isPresetEditMode = false;
+			$('#copybot_preset_save, #copybot_preset_edit').show();
+			$('#copybot_preset_confirm, #copybot_preset_delete, #copybot_preset_cancel').hide();
+			$('#copybot_preset_rename_input').hide();
+			$('#copybot_preset_select').show();
+			$('#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').prop('disabled', false);
+			updatePresetDropdown();
+		}
+
+		// 순서 변경 인라인 UI 열기
+		function openReorderModal() {
+			const presets = getPresets();
+			const list = $('#copybot_reorder_list').empty();
+			presets.forEach((preset, index) => {
+				const isFirst = index === 0;
+				const isLast = index === presets.length - 1;
+				const upButton = isFirst ? '' : '<button class="copybot_move_up" style="margin-right: 5px; padding: 2px 6px; font-size: 12px;">↑</button>';
+				const downButton = isLast ? '' : '<button class="copybot_move_down" style="margin-left: 5px; padding: 2px 6px; font-size: 12px;">↓</button>';
+				
+				const item = $(`<li class="copybot_reorder_item" style="display: flex; align-items: center; justify-content: space-between;">
+					<span class="copybot_reorder_name">${escapeHtml(preset.name)}</span>
+					<div class="copybot_reorder_buttons">${upButton}${downButton}</div>
+				</li>`);
+				item.data('presetName', preset.name);
+				list.append(item);
+			});
+			
+			// 프롬프트 관련 요소들을 숨기고 순서 변경 UI를 표시
+			$('#copybot_prompt_container > .copybot_settings_main, #copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_container').slideUp(200, function() {
+				$('#copybot_reorder_overlay').slideDown(200);
+			});
+		}
+
+		// 순서 변경 인라인 UI 닫기
+		function closeReorderModal() {
+			// 순서 변경 UI를 숨기고 프롬프트 관련 요소들을 다시 표시
+			$('#copybot_reorder_overlay').slideUp(200, function() {
+				$('#copybot_prompt_container > .copybot_settings_main, #copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_container').slideDown(200);
+			});
+		}
+
     // UI 이벤트 설정 함수 (리스너 중복 방지 강화)
     function setupEventHandlers() {
-        debugLog('깡갤 복사기: 이벤트 핸들러 설정 시작');
-        
-		// 대필이 진행중일 때 중단 버튼을 누르면 작동하는 코드
-        $(document).off('click', '#send_but.generation_progress').on('click', '#send_but.generation_progress', function() {
-            if (isGhostwritingActive) {
-                debugLog('대필 중단 버튼 클릭 감지! 중단 신호 보냅니다.');
-                
-                // 1. 중단 플래그를 false로 변경하여 모든 루프가 멈추도록 함
-                isGhostwritingActive = false; 
+    debugLog('깡갤 복사기: 이벤트 핸들러 설정 시작');
 
-                // 2. SillyTavern의 자체 중단 기능을 강제로 호출
-                // 이 부분이 실질적으로 await 상태를 깨우는 역할을 합니다.
-                try {
-                    // 전역에 있는 stopGeneration 함수를 찾아 직접 실행
-                    if (typeof window.stopGeneration === 'function') {
-                        window.stopGeneration();
-                        debugLog('SillyTavern의 stopGeneration() 함수를 직접 호출했습니다.');
-                    }
-                } catch (e) {
-                    console.error('stopGeneration 호출 실패', e);
-                }
-                
-                // 3. 즉시 프로필 원복 시도
-                if (ghostwriteOriginalProfile) {
-                    debugLog(`즉시 프로필 원복 시도: ${ghostwriteOriginalProfile}`);
-                    switchProfile(ghostwriteOriginalProfile, true);
-                    toastr.info('대필을 중단하고 원래 프로필로 복원합니다.');
-                }
-            }
-        });
+    // ---------------------------------------------
+    // --- 프리셋 관리 이벤트 핸들러 (신규/수정) ---
+    // ---------------------------------------------
 
-		
-        const eventMap = {
-            '#copybot_execute': () => {
-                let startPos = parseInt($("#copybot_start").val());
-                let endPos = parseInt($("#copybot_end").val());
-                
-                // 입력값이 비어있는지 확인
-                const startEmpty = isNaN(startPos) || $("#copybot_start").val().trim() === '';
-                const endEmpty = isNaN(endPos) || $("#copybot_end").val().trim() === '';
-                const anyFieldEmpty = startEmpty || endEmpty;
-                
-                // 하나라도 미지정이면 값만 설정하고 복사는 실행하지 않음
-                if (anyFieldEmpty) {
-                    // 시작위치가 비어있거나 NaN이면 0으로 설정
-                    if (startEmpty) {
-                        startPos = 0;
-                        $("#copybot_start").val(0);
-                    }
-                    
-                    // 마지막 메시지 번호를 한 번만 계산
-                    const actualLastIndex = getLastMessageIndex();
+    // 기존 방식 저장 (💾 아이콘)
+    $(document).off('click', '#copybot_preset_save').on('click', '#copybot_preset_save', saveCurrentPreset);
 
-                    // 종료위치가 비어있거나 NaN이면 마지막 메시지로 설정
-                    if (endEmpty) {
-                        endPos = actualLastIndex;
-                        $("#copybot_end").val(endPos);
-                    }
-                    
-                    // 상황에 따른 토스트 메시지 표시
-                    if (startEmpty && endEmpty) {
-                        toastr.info(`위치가 지정되지 않아 전체 범위(#0~#${endPos})로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.`);
-                    } else if (startEmpty) {
-                        toastr.info('시작위치가 지정되지 않아 #0으로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.');
-                    } else if (endEmpty) {
-                        toastr.info(`종료위치가 지정되지 않아 #${endPos}로 자동설정되었습니다. 다시 복사 버튼을 눌러주세요.`);
-                    }
-                    return; // 복사 실행하지 않고 종료
-                }
-                
-                // 마지막 메시지 번호 계산 (값이 모두 지정된 경우에만)
-                const actualLastIndex = getLastMessageIndex();
-                
-                // 종료위치가 마지막 메시지보다 클 경우 자동 조정
-                if (endPos > actualLastIndex) {
-                    endPos = actualLastIndex;
-                    $("#copybot_end").val(endPos);
-                    toastr.warning(`입력하신 종료위치가 마지막 메시지(${actualLastIndex}번)보다 커서 자동으로 ${actualLastIndex}번으로 조정되었습니다.`);
-                }
-                
-                if (startPos > endPos) { toastr.error('시작위치는 종료위치보다 작아야 합니다.'); return; }
-                if (startPos < 0) { toastr.error('시작위치는 0 이상이어야 합니다.'); return; }
-                executeCopyCommand(startPos, endPos);
-            },
-
-			            '#copybot_multi_delete_execute': () => {
-                // 1. 입력된 시작위치와 종료위치 값을 가져옵니다.
-                const startPos = parseInt($("#copybot_multi_delete_start").val());
-                const endPos = parseInt($("#copybot_multi_delete_end").val());
-
-                // 2. 입력값이 숫자가 아니거나 비어있는지 확인합니다.
-                if (isNaN(startPos) || isNaN(endPos)) {
-                    toastr.error('올바른 시작위치와 종료위치를 숫자로 입력해주세요.');
-                    return; // 함수를 중단합니다.
-                }
-
-                // 3. 시작위치가 종료위치보다 크거나 음수인지 확인합니다.
-                if (startPos < 0) {
-                    toastr.error('시작위치는 0 이상이어야 합니다.');
-                    return;
-                }
-                if (startPos > endPos) {
-                    toastr.error('시작위치는 종료위치보다 작거나 같아야 합니다.');
-                    return;
-                }
-
-                // 4. (가장 중요) 사용자에게 최종 확인을 받습니다.
-                const messageCount = endPos - startPos + 1;
-                const confirmation = confirm(
-                    `메시지 #${startPos}부터 #${endPos}까지, 총 ${messageCount}개를 영구적으로 삭제합니다.\n\n` +
-                    `이 작업은 되돌릴 수 없습니다!\n\n` +
-                    `정말로 삭제하시겠습니까?`
-                );
-
-                // 5. 사용자가 '확인'을 누른 경우에만 삭제 명령을 실행합니다.
-                if (confirmation) {
-                    const command = `/cut ${startPos}-${endPos}`;
-                    executeSimpleCommand(command, `메시지 ${startPos}~${endPos} 삭제 명령을 실행했습니다.`);
-                } else {
-                    toastr.info('메시지 삭제가 취소되었습니다.');
-                }
-            },
-
-            '#copybot_linebreak_fix': () => {
-                const textbox = $('#copybot_textbox');
-                const currentText = textbox.val();
-                if (!currentText.trim()) { toastr.warning('텍스트박스에 내용이 없습니다.'); return; }
-                const cleanedText = currentText.replace(/\n{3,}/g, '\n\n').trim();
-                textbox.val(cleanedText).trigger('input');
-                if (cleanedText.length !== currentText.length) toastr.success(`줄바꿈 정리 완료!`);
-                else toastr.info('정리할 내용이 없습니다.');
-            },
-            '#copybot_save_txt': () => {
-                const textboxContent = $('#copybot_textbox').val();
-                if (!textboxContent.trim()) { toastr.warning('저장할 내용이 없습니다.'); return; }
-                const blob = new Blob([textboxContent], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `깡갤복사기_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                toastr.success('txt 파일로 저장되었습니다!');
-            },
-            '#copybot_remove_tags': () => removeTagsFromElement('#copybot_textbox'),
-            '#copybot_copy_content': copyTextboxContent,
-            '#copybot_clear_content': () => {
-                $('#copybot_textbox').val('').trigger('input');
-                toastr.success('텍스트박스가 비워졌습니다.');
-            },
-            '#copybot_jump_first': () => {
-                if (confirm("첫 메시지로 이동합니다.\n\n누적된 채팅이 많을 경우 심한 렉에 걸리거나 튕길 수 있습니다.\n\n정말 이동하시겠습니까?\n실수로 누른 거라면 '취소'를 눌러주세요.")) {
-                    executeSimpleCommand('/chat-jump 0', '첫 메시지로 이동!');
-                } else {
-                    toastr.info('이동이 취소되었습니다.');
-                }
-            },
-            '#copybot_jump_last': () => executeSimpleCommand('/chat-jump {{lastMessageId}}', '마지막 메시지로 이동!'),
-            '#copybot_jump_to': () => {
-                const jumpNumber = parseInt($("#copybot_jump_number").val());
-                if (isNaN(jumpNumber) || jumpNumber < 0) { toastr.error('올바른 메시지 번호를 입력해주세요.'); return; }
-                executeSimpleCommand(`/chat-jump ${jumpNumber}`, `메시지 #${jumpNumber}로 이동!`);
-            },
-            '#copybot_open_ghostwrite_button': (e) => {
-                e.stopPropagation();
-                $('#copybot_settings_panel').slideUp(200);
-                $('#copybot_misc_panel').slideUp(200);
-                $('#copybot_ghostwrite_panel').slideToggle(200, () => {
-                    saveSettings();
-                    toastr.success('대필 설정이 저장되었습니다.');
-                });
-            },
-            '#copybot_open_settings_button': (e) => {
-                e.stopPropagation();
-                $('#copybot_ghostwrite_panel').slideUp(200);
-                $('#copybot_misc_panel').slideUp(200);
-                $('#copybot_settings_panel').slideToggle(200, () => {
-                    saveSettings();
-                    toastr.success('편의기능 설정이 저장되었습니다.');
-                });
-            },
-            '#copybot_open_misc_button': (e) => {
-                e.stopPropagation();
-                $('#copybot_ghostwrite_panel').slideUp(200);
-                $('#copybot_settings_panel').slideUp(200);
-                $('#copybot_misc_panel').slideToggle(200, () => {
-                    saveSettings();
-                    toastr.success('기타 설정이 저장되었습니다.');
-                });
-            },
-            '.copybot_toggle_button': function(e) {
-                e.stopPropagation();
-                const button = $(this);
-                const isEnabled = button.attr('data-enabled') === 'true';
-                button.attr('data-enabled', !isEnabled).text(isEnabled ? 'OFF' : 'ON');
-                
-                if (button.attr('id') === 'copybot_ghostwrite_toggle') {
-                    const targetPanel = $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_container, #copybot_ghostwrite_panel .copybot_description');
-                    targetPanel.slideToggle(!isEnabled);
-                    // 대필기능 토글시 임시 대필칸도 업데이트
-                    addTempPromptField();
-                } else if (button.attr('id') === 'copybot_temp_field_toggle') {
-                    // 임시 대필칸 사용 토글 처리
-                    addTempPromptField();
-                } else if (button.attr('id') === 'copybot_hq_profile_toggle') {
-                    // 고화질 프로필 토글 처리
-                    if (!isEnabled) {
-                        enableHighQualityProfiles();
-                        toastr.success('고화질 프로필 사진이 활성화되었습니다.');
-                    } else {
-                        disableHighQualityProfiles();
-                        toastr.info('고화질 프로필 사진이 비활성화되었습니다.');
-                    }
-                } else if (button.attr('id') === 'copybot_remove_resize_toggle') {
-                    // 입력창 조절점 제거 토글 처리
-                    if (!isEnabled) {
-                        removeResizeHandle();
-                        toastr.success('입력창 조절점이 제거되었습니다.');
-                    } else {
-                        restoreResizeHandle();
-                        toastr.info('입력창 조절점이 복원되었습니다.');
-                    }
-				} else if (button.attr('id') === 'copybot_debug_mode_toggle') {
-                    // 디버그 모드 토글 처리
-                    isDebugMode = !isEnabled;
-                    if (!isEnabled) { // 새로 켜진 경우
-                        $('#copybot_debug_info').slideDown(200);
-						debugLog('깡갤 복사기: 디버그 모드가 활성화되었습니다.');
-                    } else { // 꺼진 경우
-                        console.log('🐞 깡갤 복사기: 디버그 모드가 비활성화되었습니다.');
-                        $('#copybot_debug_info').slideUp(200);
-                    }	
-                } else {
-                    const targetPanel = $(`#${button.attr('id').replace('_toggle', '_options')}`);
-                    targetPanel.slideToggle(!isEnabled);
-                }
-                
-                updateActionButtons();
-                // 설정 변경 시 안전한 아이콘 업데이트 사용
-                safeUpdateInputFieldIcons();
-                saveSettings();
-            },
-            '.copybot_action_button': function() {
-                const actions = {
-                    'copybot_action_remove_tags': () => removeTagsFromElement('#send_textarea'),
-                    'copybot_action_delete_last': () => executeSimpleCommand('/del 1', '마지막 메시지 1개를 삭제했습니다.'),
-                    'copybot_action_delete_regen': () => executeSimpleCommand('/del 1', '마지막 메시지를 삭제하고 재생성합니다.', triggerCacheBustRegeneration)
-                };
-                actions[$(this).attr('id')]?.();
-            }
-        };
-
-        for (const selector in eventMap) {
-            $(document).off('click', selector).on('click', selector, eventMap[selector]);
+    // 편집 모드 시작 (⚙️ 아이콘)
+    $(document).off('click', '#copybot_preset_edit').on('click', '#copybot_preset_edit', function() {
+        // 비활성화된 상태면 클릭 무시
+        if ($(this).hasClass('disabled')) {
+            return false;
         }
-		// 프로필 목록 새로고침 버튼 이벤트 핸들러
-		$(document).off('click', '#copybot_reload_profiles_button').on('click', '#copybot_reload_profiles_button', function() {
-		debugLog('프로필 목록 수동 새로고침 실행');
-    
-		// 목록을 다시 불러오기 전에 현재 선택된 값을 기억
-		const currentlySelected = $('#copybot_ghostwrite_profile_select').val();
-    
-		loadGhostwriteProfiles();
-    
-		// 새로고침 후에도 이전에 선택했던 프로필이 여전히 존재한다면, 그 선택을 유지
-		$('#copybot_ghostwrite_profile_select').val(currentlySelected);
-    
-		toastr.success('프로필 목록을 새로고침했습니다.');
+        enterPresetEditMode();
+    });
 
-		// 시각적 피드백: 아이콘을 잠시 회전시킴
-		const icon = $(this);
-		icon.addClass('fa-spin');
-		setTimeout(() => icon.removeClass('fa-spin'), 500);
-		});
-        $(document).off('keypress', '#copybot_start, #copybot_end').on('keypress', '#copybot_start, #copybot_end', (e) => { if(e.which === 13) $('#copybot_execute').click(); });
-        $(document).off('keypress', '#copybot_jump_number').on('keypress', '#copybot_jump_number', (e) => { if(e.which === 13) $('#copybot_jump_to').click(); });
+    // 편집 취소 (❌ 아이콘)
+    $(document).off('click', '#copybot_preset_cancel').on('click', '#copybot_preset_cancel', () => exitPresetEditMode(true));
+
+    // 프리셋 선택 또는 관리 기능 실행 (드롭다운)
+    $(document).off('change', '#copybot_preset_select').on('change', '#copybot_preset_select', function() {
+        const selectedValue = $(this).val();
+        // 관리 메뉴 선택 전의 원래 선택된 값을 data 속성에서 가져오기
+        const originalValue = $(this).data('previousValue') || '';
+
+        if (selectedValue === '__add__') {
+            addNewPreset();
+        } else if (selectedValue === '__reorder__') {
+			$(this).val(originalValue); // 드롭다운 값 원상복구
+			openReorderModal();
+		} else if (selectedValue === '__copy__') {
+			// 드롭다운 값을 원래대로 돌려놓고 복사 함수 실행
+			$(this).val(originalValue);
+			copyCurrentPreset();
+		} else {
+            // 일반 프리셋 선택 - 현재 값을 data 속성에 저장
+            $(this).data('previousValue', selectedValue);
+            loadPreset(selectedValue);
+			updatePresetDropdown();
+			updatePresetEditButtonState(); // 버튼 상태 업데이트 추가
+            if (isPresetEditMode) {
+                $('#copybot_preset_rename_input').val(selectedValue);
+                if (selectedValue) {
+                    $('#copybot_preset_delete').show();
+                } else {
+                    $('#copybot_preset_delete').hide();
+                }
+            }
+        }
+    });
+
+    // 이름 변경 저장 (✔️ 아이콘)
+    $(document).off('click', '#copybot_preset_confirm').on('click', '#copybot_preset_confirm', function() {
+        const oldName = $('#copybot_preset_select').val();
+        const newName = $('#copybot_preset_rename_input').val().trim();
         
-        $(document).off('input', '#copybot_textbox').on('input', '#copybot_textbox', function() {
-            const hasContent = $(this).val().trim().length > 0;
-            $('#copybot_copy_content, #copybot_remove_tags, #copybot_linebreak_fix, #copybot_save_txt, #copybot_clear_content').prop('disabled', !hasContent);
-        });
+        if (!oldName) {
+            toastr.warning('이름을 변경할 프리셋이 선택되지 않았습니다.');
+            return;
+        }
+        if (!newName) {
+            toastr.error('프리셋 이름은 비워둘 수 없습니다.');
+            return;
+        }
+        
+        if (renamePreset(oldName, newName)) {
+            toastr.success(`'${escapeHtml(oldName)}' -> '${escapeHtml(newName)}'(으)로 이름이 변경되었습니다.`);
+            exitPresetEditMode(true);
+            $('#copybot_preset_select').val(newName); // 변경된 이름으로 선택 유지
+        }
+    });
 
-        $(document).off('change', '.copybot_checkbox, .copybot_radio').on('change', '.copybot_checkbox, .copybot_radio', () => {
+    // 프리셋 삭제 (🗑️ 아이콘)
+    $(document).off('click', '#copybot_preset_delete').on('click', '#copybot_preset_delete', function() {
+        const nameToDelete = $('#copybot_preset_select').val();
+        if (!nameToDelete) {
+            toastr.warning('삭제할 프리셋이 선택되지 않았습니다.');
+            return;
+        }
+        
+        if (confirm(`'${escapeHtml(nameToDelete)}' 프리셋을 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+            deletePreset(nameToDelete);
+            toastr.success(`'${escapeHtml(nameToDelete)}' 프리셋이 삭제되었습니다.`);
+            exitPresetEditMode(true);
+        }
+    });
+
+    // 순서 변경 모달의 저장/취소 버튼
+    $(document).off('click', '#copybot_reorder_save').on('click', '#copybot_reorder_save', function() {
+        const newOrder = [];
+        $('#copybot_reorder_list').find('li').each(function() {
+            newOrder.push($(this).data('presetName'));
+        });
+        
+        reorderPresets(newOrder);
+        toastr.success('프리셋 순서가 저장되었습니다.');
+        updatePresetDropdown();
+        closeReorderModal();
+    });
+    $(document).off('click', '#copybot_reorder_cancel').on('click', '#copybot_reorder_cancel', closeReorderModal);
+
+    // --- 순서 변경: 위/아래 버튼 방식으로 변경 ---
+    $(document).off('click', '.copybot_move_up').on('click', '.copybot_move_up', function(e) {
+        e.preventDefault();
+        const item = $(this).closest('li');
+        const prevItem = item.prev();
+        if (prevItem.length > 0) {
+            item.insertBefore(prevItem);
+        }
+    });
+    
+    $(document).off('click', '.copybot_move_down').on('click', '.copybot_move_down', function(e) {
+        e.preventDefault();
+        const item = $(this).closest('li');
+        const nextItem = item.next();
+        if (nextItem.length > 0) {
+            item.insertAfter(nextItem);
+        }
+    });
+
+	// 프리셋 이름 변경 입력창에서 Enter 키로 저장
+	$(document).off('keydown', '#copybot_preset_rename_input').on('keydown', '#copybot_preset_rename_input', function(e) {
+		// Enter 키가 눌렸는지 확인 (keyCode 13은 Enter)
+		if (e.key === 'Enter' || e.which === 13) {
+			// Enter 키의 기본 동작(예: 폼 제출)을 막습니다.
+			e.preventDefault();
+			
+			// 이미 만들어진 저장(확인) 버튼을 프로그래밍 방식으로 클릭하여
+			// 기존의 저장 로직을 그대로 재사용합니다.
+			$('#copybot_preset_confirm').click();
+		}
+	});
+
+    // 대필이 진행중일 때 중단 버튼을 누르면 작동하는 코드
+    $(document).off('click', '#send_but.generation_progress').on('click', '#send_but.generation_progress', function() {
+        if (isGhostwritingActive) {
+            debugLog('대필 중단 버튼 클릭 감지! 중단 신호 보냅니다.');
+            
+            isGhostwritingActive = false; 
+
+            try {
+                if (typeof window.stopGeneration === 'function') {
+                    window.stopGeneration();
+                    debugLog('SillyTavern의 stopGeneration() 함수를 직접 호출했습니다.');
+                }
+            } catch (e) {
+                console.error('stopGeneration 호출 실패', e);
+            }
+            
+            if (ghostwriteOriginalProfile) {
+                debugLog(`즉시 프로필 원복 시도: ${ghostwriteOriginalProfile}`);
+                switchProfile(ghostwriteOriginalProfile, true);
+                toastr.info('대필을 중단하고 원래 프로필로 복원합니다.');
+            }
+        }
+    });
+
+    
+    const eventMap = {
+        '#copybot_execute': () => {
+            let startPos = parseInt($("#copybot_start").val());
+            let endPos = parseInt($("#copybot_end").val());
+            
+            const startEmpty = isNaN(startPos) || $("#copybot_start").val().trim() === '';
+            const endEmpty = isNaN(endPos) || $("#copybot_end").val().trim() === '';
+            
+            if (startEmpty || endEmpty) {
+                if (startEmpty) $("#copybot_start").val(0);
+                if (endEmpty) $("#copybot_end").val(getLastMessageIndex());
+                toastr.info(`범위가 자동으로 설정되었습니다. 다시 복사 버튼을 눌러주세요.`);
+                return;
+            }
+            
+            const actualLastIndex = getLastMessageIndex();
+            if (endPos > actualLastIndex) {
+                endPos = actualLastIndex;
+                $("#copybot_end").val(endPos);
+                toastr.warning(`종료위치가 마지막 메시지(${actualLastIndex}번)로 자동 조정되었습니다.`);
+            }
+            
+            if (startPos > endPos) { toastr.error('시작위치는 종료위치보다 작아야 합니다.'); return; }
+            if (startPos < 0) { toastr.error('시작위치는 0 이상이어야 합니다.'); return; }
+            executeCopyCommand(startPos, endPos);
+        },
+        '#copybot_multi_delete_execute': () => {
+            const startPos = parseInt($("#copybot_multi_delete_start").val());
+            const endPos = parseInt($("#copybot_multi_delete_end").val());
+
+            if (isNaN(startPos) || isNaN(endPos)) {
+                toastr.error('올바른 시작위치와 종료위치를 숫자로 입력해주세요.');
+                return;
+            }
+            if (startPos < 0 || startPos > endPos) {
+                toastr.error('올바른 범위를 입력해주세요.');
+                return;
+            }
+
+            const messageCount = endPos - startPos + 1;
+            if (confirm(`메시지 #${startPos}부터 #${endPos}까지, 총 ${messageCount}개를 영구적으로 삭제합니다.\n\n이 작업은 되돌릴 수 없습니다! 정말로 삭제하시겠습니까?`)) {
+                executeSimpleCommand(`/cut ${startPos}-${endPos}`, `메시지 ${startPos}~${endPos} 삭제 명령을 실행했습니다.`);
+            } else {
+                toastr.info('메시지 삭제가 취소되었습니다.');
+            }
+        },
+        '#copybot_linebreak_fix': () => {
+            const textbox = $('#copybot_textbox');
+            const currentText = textbox.val();
+            if (!currentText.trim()) { toastr.warning('텍스트박스에 내용이 없습니다.'); return; }
+            const cleanedText = currentText.replace(/\n{3,}/g, '\n\n').trim();
+            textbox.val(cleanedText).trigger('input');
+            if (cleanedText.length !== currentText.length) toastr.success(`줄바꿈 정리 완료!`);
+            else toastr.info('정리할 내용이 없습니다.');
+        },
+        '#copybot_save_txt': () => {
+            const textboxContent = $('#copybot_textbox').val();
+            if (!textboxContent.trim()) { toastr.warning('저장할 내용이 없습니다.'); return; }
+            const blob = new Blob([textboxContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `깡갤복사기_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toastr.success('txt 파일로 저장되었습니다!');
+        },
+        '#copybot_remove_tags': () => removeTagsFromElement('#copybot_textbox'),
+        '#copybot_copy_content': copyTextboxContent,
+        '#copybot_clear_content': () => {
+            $('#copybot_textbox').val('').trigger('input');
+            toastr.success('텍스트박스가 비워졌습니다.');
+        },
+        '#copybot_jump_first': () => {
+            if (confirm("첫 메시지로 이동합니다.\n\n채팅이 많을 경우 렉이 발생할 수 있습니다.\n정말 이동하시겠습니까?")) {
+                executeSimpleCommand('/chat-jump 0', '첫 메시지로 이동!');
+            } else {
+                toastr.info('이동이 취소되었습니다.');
+            }
+        },
+        '#copybot_jump_last': () => executeSimpleCommand('/chat-jump {{lastMessageId}}', '마지막 메시지로 이동!'),
+        '#copybot_jump_to': () => {
+            const jumpNumber = parseInt($("#copybot_jump_number").val());
+            if (isNaN(jumpNumber) || jumpNumber < 0) { toastr.error('올바른 메시지 번호를 입력해주세요.'); return; }
+            executeSimpleCommand(`/chat-jump ${jumpNumber}`, `메시지 #${jumpNumber}로 이동!`);
+        },
+        '#copybot_open_ghostwrite_button': (e) => { e.stopPropagation(); $('#copybot_settings_panel, #copybot_misc_panel').slideUp(200); $('#copybot_ghostwrite_panel').slideToggle(200, saveSettings); },
+        '#copybot_open_settings_button': (e) => { e.stopPropagation(); $('#copybot_ghostwrite_panel, #copybot_misc_panel').slideUp(200); $('#copybot_settings_panel').slideToggle(200, saveSettings); },
+        '#copybot_open_misc_button': (e) => { e.stopPropagation(); $('#copybot_ghostwrite_panel, #copybot_settings_panel').slideUp(200); $('#copybot_misc_panel').slideToggle(200, saveSettings); },
+        '.copybot_toggle_button': function(e) {
+            e.stopPropagation();
+            const button = $(this);
+            const isEnabled = button.attr('data-enabled') === 'true';
+            const newState = !isEnabled;
+            button.attr('data-enabled', newState).text(newState ? 'ON' : 'OFF');
+            
+            const actions = {
+                'copybot_ghostwrite_toggle': () => $('#copybot_ghostwrite_position_options, #copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_container, #copybot_ghostwrite_panel .copybot_description').slideToggle(newState),
+                'copybot_temp_field_toggle': addTempPromptField,
+                'copybot_hq_profile_toggle': () => newState ? enableHighQualityProfiles() : disableHighQualityProfiles(),
+                'copybot_remove_resize_toggle': () => newState ? removeResizeHandle() : restoreResizeHandle(),
+                'copybot_debug_mode_toggle': () => { isDebugMode = newState; $('#copybot_debug_info').slideToggle(newState); },
+            };
+            const defaultAction = () => $(`#${button.attr('id').replace('_toggle', '_options')}`).slideToggle(newState);
+            (actions[button.attr('id')] || defaultAction)();
+            
             updateActionButtons();
-            // 설정 변경 시 안전한 아이콘 업데이트 사용
             safeUpdateInputFieldIcons();
             saveSettings();
-        });
-        
-        $(document).off('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').on('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox', saveSettings);
-        // 프로필 선택 변경 시 저장 확인 강화
-        $(document).off('change', '#copybot_ghostwrite_profile_select').on('change', '#copybot_ghostwrite_profile_select', function() {
-            const selectedProfile = $(this).val();
-            debugLog('대필 프로필 변경됨:', selectedProfile);
-            
-            const saveSuccess = saveSettings();
-            if (saveSuccess) {
-                debugLog('프로필 설정 저장 성공');
-                toastr.success(`대필 프로필이 '${selectedProfile === 'default' ? '기본값 사용' : selectedProfile}'으로 변경되었습니다.`);
-            } else {
-                debugLog('프로필 설정 저장 실패');
-                toastr.error('프로필 설정 저장에 실패했습니다.');
-            }
-        });
-        $(document).off('click', '#copybot_settings_panel, #copybot_ghostwrite_panel').on('click', (e) => e.stopPropagation());
+        },
+        '.copybot_action_button': function() {
+            const actions = {
+                'copybot_action_remove_tags': () => removeTagsFromElement('#send_textarea'),
+                'copybot_action_delete_last': () => executeSimpleCommand('/del 1', '마지막 메시지 1개를 삭제했습니다.'),
+                'copybot_action_delete_regen': () => executeSimpleCommand('/del 1', '마지막 메시지를 삭제하고 재생성합니다.', triggerCacheBustRegeneration)
+            };
+            actions[$(this).attr('id')]?.();
+        }
+    };
 
-        debugLog('깡갤 복사기: 이벤트 핸들러 설정 완료');
+    for (const selector in eventMap) {
+        $(document).off('click', selector).on('click', selector, eventMap[selector]);
     }
+    // ... 이하 나머지 이벤트 핸들러들
+    $(document).off('click', '#copybot_reload_profiles_button').on('click', '#copybot_reload_profiles_button', function() {
+        debugLog('프로필 목록 수동 새로고침 실행');
+        const currentlySelected = $('#copybot_ghostwrite_profile_select').val();
+        loadGhostwriteProfiles();
+        $('#copybot_ghostwrite_profile_select').val(currentlySelected);
+        toastr.success('프로필 목록을 새로고침했습니다.');
+        const icon = $(this);
+        icon.addClass('fa-spin');
+        setTimeout(() => icon.removeClass('fa-spin'), 500);
+    });
+    $(document).off('keypress', '#copybot_start, #copybot_end').on('keypress', '#copybot_start, #copybot_end', (e) => { if(e.which === 13) $('#copybot_execute').click(); });
+    $(document).off('keypress', '#copybot_jump_number').on('keypress', '#copybot_jump_number', (e) => { if(e.which === 13) $('#copybot_jump_to').click(); });
+    
+    $(document).off('input', '#copybot_textbox').on('input', '#copybot_textbox', function() {
+        const hasContent = $(this).val().trim().length > 0;
+        $('#copybot_copy_content, #copybot_remove_tags, #copybot_linebreak_fix, #copybot_save_txt, #copybot_clear_content').prop('disabled', !hasContent);
+    });
+
+    $(document).off('change', '.copybot_checkbox, .copybot_radio').on('change', '.copybot_checkbox, .copybot_radio', () => {
+        updateActionButtons();
+        safeUpdateInputFieldIcons();
+        saveSettings();
+    });
+    
+    $(document).off('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').on('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox', saveSettings);
+    $(document).off('change', '#copybot_ghostwrite_profile_select').on('change', '#copybot_ghostwrite_profile_select', saveSettings);
+    $(document).off('click', '#copybot_settings_panel, #copybot_ghostwrite_panel, #copybot_misc_panel').on('click', (e) => e.stopPropagation());
+
+    debugLog('깡갤 복사기: 이벤트 핸들러 설정 완료');
+}
+
 
     // **강화된 다중 시점 아이콘 업데이트 스케줄러**
     function scheduleIconUpdates() {
@@ -1995,7 +2347,9 @@
                     addTempPromptField();
                     updateActionButtons();
                     loadGhostwriteProfiles(); // 프로필 목록 로드 추가
-                    
+                    updatePresetDropdown(); // 프리셋 드롭다운 메뉴 초기화
+					updatePresetEditButtonState(); // 편집 버튼 상태 초기화
+					
                     // 강화된 다중 시점 아이콘 업데이트 시도
                     scheduleIconUpdates();
                 }, 100);

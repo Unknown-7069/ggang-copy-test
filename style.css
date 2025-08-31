@@ -1006,3 +1006,199 @@
     border-color: #e53e3e; /* 포커스 시 테두리 색상 통일 */
     box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.1) !important;
 }
+
+/* --- 프리셋 UI 스타일 --- */
+
+/* 비활성화된 프리셋 편집 버튼 스타일 */
+.copybot_icon_button.disabled {
+    color: #e2e8f0 !important;
+    cursor: not-allowed !important;
+    opacity: 0.4 !important;
+    pointer-events: none !important;
+}
+
+.copybot_icon_button.disabled:hover {
+    color: #e2e8f0 !important;
+    background-color: transparent !important;
+    transform: none !important;
+}
+
+/* 프리셋 아이콘 버튼 기본 스타일 */
+.copybot_icon_button {
+
+/* 프리셋 아이콘 버튼 기본 스타일 */
+.copybot_icon_button {
+    font-size: 16px;          /* 아이콘 크기 */
+    color: #a0aec0;            /* 기본 아이콘 색상 (연한 회색) */
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 5px;             /* 클릭 영역 확보 */
+    border-radius: 50%;       /* 원형 배경 효과를 위해 */
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 아이콘 버튼에 마우스 올렸을 때 */
+.copybot_icon_button:hover {
+    color: #4299e1;            /* 테마의 파란색으로 변경 */
+    background-color: #edf2f7;  /* 매우 은은한 배경색 추가 */
+    transform: scale(1.15);     /* 살짝 커지는 효과 */
+}
+
+/* 아이콘 버튼이 비활성화 상태일 때 (JS로 클래스 추가) */
+.copybot_icon_button.disabled {
+    color: #e2e8f0;            /* 더 연한 회색 */
+    cursor: not-allowed;
+    background-color: transparent;
+    transform: none;
+}
+
+/* 프리셋 드롭다운 메뉴 스타일 조정 */
+#copybot_preset_select {
+    /* text_pole 클래스가 대부분의 스타일을 처리합니다. */
+    /* 아래는 JS에서 제어할 세부 조정입니다. */
+    -webkit-appearance: none; /* 기본 화살표 숨기기 (웹킷) */
+    -moz-appearance: none;    /* 기본 화살표 숨기기 (파이어폭스) */
+    appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a0aec0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-13%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2013l128%20127.9c3.6%203.6%207.8%205.4%2013%205.4s9.4-1.8%2013-5.4L287%2095.2c3.6-3.6%205.4-7.8%205.4-13%200-5-1.8-9.4-5.4-13z%22%2F%3E%3C%2Fsvg%3E');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 8px 8px;
+    padding-right: 24px; /* 화살표 아이콘 공간 확보 */
+}
+
+/* --- 프리셋 편집 모드 UI 스타일 --- */
+
+/* 편집 모드일 때 프롬프트 텍스트박스 비활성화 스타일 */
+.copybot_ghostwrite_text:disabled {
+    background-color: #f7fafc !important;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 드롭다운 메뉴의 관리 항목 스타일 */
+#copybot_preset_select option.copybot_preset_management_option {
+    font-weight: bold;
+    color: #3182ce;
+    background-color: #f0f4f8;
+    border-top: 1px solid #e2e8f0;
+    padding: 6px 0; /* 일부 브라우저에서는 적용되지 않을 수 있음 */
+}
+
+
+/* --- 프리셋 순서 변경 모달 스타일 --- */
+
+#copybot_reorder_overlay {
+    /* 대필 설정 영역 내부의 일반 div로 변경 */
+    position: static;
+    background: #fff9f5;
+    border: 2px solid #ed8936;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    height: auto;
+    display: block;
+    z-index: auto;
+}
+
+#copybot_reorder_panel {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+#copybot_reorder_panel h5 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    color: #4299e1;
+}
+
+#copybot_reorder_panel small {
+    margin-bottom: 15px;
+}
+
+#copybot_reorder_list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 20px 0;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.copybot_reorder_item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.copybot_reorder_item:last-child {
+    margin-bottom: 0;
+}
+
+.copybot_reorder_item:hover {
+    background-color: #e8f4fd;
+}
+
+.copybot_reorder_buttons button {
+    background: #4299e1 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 3px !important;
+    cursor: pointer !important;
+    font-weight: bold !important;
+}
+
+.copybot_reorder_buttons button:hover {
+    background: #3182ce !important;
+}
+}
+
+.copybot_reorder_name {
+    flex-grow: 1;
+    color: #2d3748;
+}
+
+#copybot_reorder_buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+/* --- 프리셋 순서 변경 인라인 UI 스타일 --- */
+
+#copybot_reorder_overlay {
+    /* 대필 설정 영역 내부의 일반 div로 변경 */
+    background: #fff9f5;
+    border: 2px solid #ed8936;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+    box-sizing: border-box;
+}
+
+#copybot_reorder_panel {
+    background: transparent; /* 배경 투명하게 */
+    padding: 0; /* 패딩 제거 (overlay에서 처리) */
+    border-radius: 0;
+    box-shadow: none;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
