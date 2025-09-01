@@ -16,11 +16,157 @@
     let isGhostwritingActive = false;
     let ghostwriteOriginalProfile = null;
 
+    // 하이브리드 자동저장 관련 변수들
+    let debounceTimers = {
+        basicPrompt: null,
+        excludePrompt: null,
+        profile: null
+    };
+    let lastSavedValues = {
+        basicPrompt: '',
+        excludePrompt: '', 
+        profile: 'default'
+    };
+    let isSaving = {
+        basicPrompt: false,
+        excludePrompt: false,
+        profile: false
+    };
+
     // 디버그 로그 전용 함수
     function debugLog(...args) {
         if (isDebugMode) {
             console.log('🐞 깡갤 복사기:', ...args);
         }
+    }
+
+    // 🔥 버그 수정: 상태 아이콘 표시/숨김 함수 (디버깅 로그 추가)
+    function showStatusIcon(fieldName, isLoading = true) {
+        const selectorMap = {
+            'basicPrompt': '#copybot_basic_prompt_status',
+            'excludePrompt': '#copybot_exclude_prompt_status', 
+            'profile': '#copybot_profile_status'
+        };
+        
+        const selector = selectorMap[fieldName];
+        if (!selector) {
+            console.warn(`알 수 없는 필드명: ${fieldName}`);
+            return;
+        }
+        
+        const statusElement = $(selector);
+        debugLog(`상태 아이콘 ${isLoading ? '⏳' : '✅'} 표시 시도:`, selector, `요소 발견: ${statusElement.length > 0}`);
+        
+        if (statusElement.length) {
+            statusElement.text(isLoading ? '⏳' : '✅').show();
+            debugLog(`${fieldName} 상태 아이콘 ${isLoading ? '로딩' : '완료'} 표시됨`);
+            
+            if (!isLoading) {
+                setTimeout(() => {
+                    statusElement.fadeOut(2000);
+                    debugLog(`${fieldName} 상태 아이콘 페이드아웃 시작`);
+                }, 2000); // 2초 표시 후 2초 페이드아웃 (총 4초)
+            }
+        } else {
+            console.warn(`상태 아이콘 요소를 찾을 수 없음: ${selector}`);
+        }
+    }
+
+    // 중복 저장 방지를 위한 값 비교 함수
+    function hasValueChanged(fieldName, currentValue) {
+        const hasChanged = lastSavedValues[fieldName] !== currentValue;
+        if (hasChanged) {
+            debugLog(`${fieldName} 값 변경 감지:`, lastSavedValues[fieldName], '->', currentValue);
+        }
+        return hasChanged;
+    }
+
+    // 3가지 트리거 조합 & 중복 방지 로직이 포함된 하이브리드 자동저장
+    async function executeHybridAutoSave(fieldName, triggerType = 'unknown') {
+        try {
+            // 이미 저장 중이면 중복 실행 방지
+            if (isSaving[fieldName]) {
+                debugLog(`${fieldName} 이미 저장 중이므로 중복 실행 방지 (${triggerType})`);
+                return;
+            }
+
+            let currentValue = '';
+            switch(fieldName) {
+                case 'basicPrompt':
+                    currentValue = $('#copybot_ghostwrite_textbox').val() || '';
+                    break;
+                case 'excludePrompt':
+                    currentValue = $('#copybot_ghostwrite_exclude_textbox').val() || '';
+                    break;
+                case 'profile':
+                    currentValue = $('#copybot_ghostwrite_profile_select').val() || 'default';
+                    break;
+            }
+
+            // 🔥 중복 방지: 값이 변경되지 않았으면 저장 건너뛰기
+            if (!hasValueChanged(fieldName, currentValue)) {
+                debugLog(`${fieldName} 값이 변경되지 않아 저장 건너뛰기 (${triggerType})`);
+                return;
+            }
+
+            // 저장 상태 시작
+            isSaving[fieldName] = true;
+            showStatusIcon(fieldName, true); // ⏳ 표시
+            debugLog(`${fieldName} 하이브리드 자동저장 시작 (트리거: ${triggerType})`);
+
+            // 실제 프리셋 저장 실행 (자동저장 플래그 전달)
+            saveCurrentPreset(true);
+            
+            // 저장된 값 업데이트
+            lastSavedValues[fieldName] = currentValue;
+            
+            // 저장 완료 표시
+            showStatusIcon(fieldName, false); // ✅ 표시 후 페이드아웃
+
+            debugLog(`${fieldName} 하이브리드 자동저장 완료 (트리거: ${triggerType})`);
+
+        } catch (error) {
+            console.error(`깡갤 복사기: ${fieldName} 하이브리드 자동저장 실패 (${triggerType})`, error);
+            // 에러 발생 시 상태 아이콘 숨기기
+            showStatusIcon(fieldName, false);
+        } finally {
+            // 저장 상태 해제 (500ms 후)
+            setTimeout(() => {
+                isSaving[fieldName] = false;
+            }, 500);
+        }
+    }
+
+    // 디바운싱 자동저장 함수
+    function scheduleDebounceAutoSave(fieldName, delay = 500) {
+        // 기존 타이머 취소
+        if (debounceTimers[fieldName]) {
+            clearTimeout(debounceTimers[fieldName]);
+        }
+        
+        // 새 타이머 설정
+        debounceTimers[fieldName] = setTimeout(() => {
+            executeHybridAutoSave(fieldName, 'debounce');
+        }, delay);
+    }
+
+    // 🔥 디버깅 강화: 즉시 자동저장 함수 (blur, change 이벤트용)
+    function scheduleImmediateAutoSave(fieldName, triggerType) {
+        debugLog(`scheduleImmediateAutoSave 호출됨: ${fieldName}, ${triggerType}`);
+        
+        // 디바운싱 타이머가 있다면 취소 (즉시 저장이 우선)
+        if (debounceTimers[fieldName]) {
+            debugLog(`${fieldName} 기존 디바운싱 타이머 취소`);
+            clearTimeout(debounceTimers[fieldName]);
+            debounceTimers[fieldName] = null;
+        }
+        
+        // 즉시 실행
+        debugLog(`${fieldName} 50ms 후 executeHybridAutoSave 실행 예약`);
+        setTimeout(() => {
+            debugLog(`${fieldName} executeHybridAutoSave 실행 시작`);
+            executeHybridAutoSave(fieldName, triggerType);
+        }, 50); // 최소한의 지연으로 UI 업데이트 완료 대기
     }
 
     // 색상 변환을 위한 헬퍼 함수들
@@ -78,6 +224,9 @@
     
     // 입력창 조절점 제거 기능
     let resizeStyleElement = null;
+    
+    // placeholder 숨기기 기능 - 안정성 개선 버전
+    let placeholderBackupMap = new Map(); // 요소별로 백업 관리
     
     function removeResizeHandle() {
         debugLog('깡갤 복사기: 입력창 및 임시 대필칸 조절점 제거');
@@ -137,6 +286,69 @@
             resizeStyleElement = null;
         }
     }
+
+    // CSS 기반 placeholder 숨기기/복원 함수들 - 더 안정적인 방법
+    let placeholderStyleElement = null;
+    
+    function hidePlaceholder() {
+        debugLog('깡갤 복사기: CSS 기반 입력창 안내문 숨기기');
+        
+        // 기존 스타일 제거
+        if (placeholderStyleElement) {
+            placeholderStyleElement.remove();
+        }
+        
+        // CSS 스타일 추가로 placeholder 숨기기
+        placeholderStyleElement = document.createElement('style');
+        placeholderStyleElement.textContent = `
+            #send_textarea::placeholder,
+            #copybot_temp_prompt::placeholder {
+                opacity: 0 !important;
+                color: transparent !important;
+            }
+        `;
+        document.head.appendChild(placeholderStyleElement);
+        
+        debugLog('CSS 기반 placeholder 숨김 완료');
+    }
+    
+    function restorePlaceholder() {
+        debugLog('깡갤 복사기: CSS 기반 입력창 안내문 복원');
+        
+        // CSS 스타일 제거로 placeholder 복원
+        if (placeholderStyleElement) {
+            placeholderStyleElement.remove();
+            placeholderStyleElement = null;
+        }
+        
+        debugLog('CSS 기반 placeholder 복원 완료');
+    }
+
+    // 안전한 placeholder 적용 함수 (타이밍 이슈 해결)
+    function safeApplyPlaceholderSetting() {
+        const hidePlaceholderEnabled = $('#copybot_hide_placeholder_toggle').attr('data-enabled') === 'true';
+        
+        // DOM 요소가 준비될 때까지 재시도
+        const applyWithRetry = (attempts = 0) => {
+            const textarea = document.querySelector('#send_textarea');
+            
+            if (textarea && textarea.isConnected) {
+                if (hidePlaceholderEnabled) {
+                    hidePlaceholder();
+                } else {
+                    restorePlaceholder();
+                }
+            } else if (attempts < 10) {
+                debugLog(`placeholder 적용 재시도 ${attempts + 1}/10`);
+                setTimeout(() => applyWithRetry(attempts + 1), 100);
+            } else {
+                debugLog('placeholder 적용 실패 - send_textarea 요소를 찾을 수 없음');
+            }
+        };
+        
+        applyWithRetry();
+    }
+
 
     
     function enableHighQualityProfiles() {
@@ -355,8 +567,7 @@
 										<input type="text" id="copybot_preset_rename_input" class="text_pole" style="width: 100%; display: none;" placeholder="프리셋 이름 입력..."/>
 									</div>
 									<div id="copybot_preset_buttons" style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-										<!-- 일반 모드 아이콘 -->
-										<i id="copybot_preset_save" class="fa-solid fa-save copybot_icon_button" title="현재 프롬프트를 새 프리셋으로 저장"></i>
+										<!-- 일반 모드 아이콘 (저장 아이콘 제거됨) -->
 										<i id="copybot_preset_edit" class="fa-solid fa-edit copybot_icon_button" title="프리셋 편집 모드 시작"></i>
 										<!-- 편집 모드 아이콘 (처음에는 숨김) -->
 										<i id="copybot_preset_confirm" class="fa-solid fa-check copybot_icon_button" title="변경사항 저장" style="display:none; color: #48bb78;"></i>
@@ -365,23 +576,49 @@
 									</div>
 								</div>
 
-								<!-- 대필 프롬프트 영역 전체 컨테이너 -->
-								<div id="copybot_prompt_container">
-									<!-- "대필 프롬프트" 라벨 -->
-									<div class="copybot_settings_main" style="margin-bottom: 8px;">
-										<span class="copybot_settings_label">대필 프롬프트</span>
-									</div>
-									
-									<!-- 대필 프롬프트 텍스트박스 -->
-									<textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="display: block;"></textarea>
-									
-									<!-- 대필 제외 프롬프트 컨테이너 -->
-									<div id="copybot_ghostwrite_exclude_container" style="display: block; margin-top: 12px;">
-										<div class="copybot_settings_main">
-											<span class="copybot_settings_label">대필 제외 프롬프트</span>
-										</div>
-										<textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
-									</div>
+								<!-- 통합된 프리셋 내용 박스 -->
+                                <div id="copybot_prompt_container" class="copybot_preset_content_box">
+                                    <!-- "대필 기본 지시문" 라벨 -->
+                                    <div class="copybot_settings_main" style="margin-bottom: 8px;">
+                                        <span class="copybot_settings_label">대필 기본 지시문</span>
+                                        <span id="copybot_basic_prompt_status" class="copybot_status_icon" style="margin-left: 8px; display: none;">⏳</span>
+                                    </div>
+                                    
+                                    <!-- 대필 기본 지시문 텍스트박스 -->
+                                    <textarea id="copybot_ghostwrite_textbox" placeholder="5문장 이하로, 정중한 말투, 1인칭, NSFW 등..." class="copybot_ghostwrite_text" style="display: block;"></textarea>
+                                    
+                                    <!-- 대필 제외 지시문 컨테이너 -->
+                                    <div id="copybot_ghostwrite_exclude_container" style="display: block; margin-top: 12px;">
+                                        <div class="copybot_settings_main">
+                                            <span class="copybot_settings_label">대필 제외 지시문</span>
+                                            <span id="copybot_exclude_prompt_status" class="copybot_status_icon" style="margin-left: 8px; display: none;">⏳</span>
+                                        </div>
+                                        <textarea id="copybot_ghostwrite_exclude_textbox" placeholder="웃음, 다정한 말투, 질문하지 않기, 존댓말 금지, 한남 말투 등..." class="copybot_ghostwrite_text" style="margin-top: 8px;"></textarea>
+                                    </div>
+                                    
+                                    <!-- 사용할 프로필 섹션 -->
+                                    <div class="copybot_profile_section" style="margin-top: 12px;">
+                                        <div class="copybot_settings_main" style="margin-bottom: 8px;">
+                                            <span class="copybot_settings_label">사용할 프로필</span>
+                                            <span id="copybot_profile_status" class="copybot_status_icon" style="margin-left: 8px; display: none;">⏳</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <select id="copybot_ghostwrite_profile_select" class="text_pole" style="flex: 1;">
+                                                <option value="default">기본값 사용</option>
+                                                <!-- 프로필 목록은 나중에 자바스크립트로 채워집니다 -->
+                                            </select>
+                                            <!-- 프로필 목록 새로고침 버튼 -->
+                                            <span id="copybot_reload_profiles_button" title="프로필 목록 새로고침" class="fa-solid fa-sync-alt" style="cursor: pointer; opacity: 0.7;"></span>
+                                        </div>
+                                        <div class="copybot_description" style="margin-top: 8px; font-size: 11px; color: #ff4d4d; font-weight: bold;">
+                                            * 실험적인 기능입니다.
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 프리셋 통합 설명문구 -->
+                                    <div class="copybot_preset_description" style="margin-top: 16px; padding: 8px 12px; background: #f0f4f8; border-left: 3px solid #4299e1; border-radius: 4px; font-size: 12px; color: #2d3748; line-height: 1.4;">
+                                        💾 저장 시 위 3가지(기본 지시문 + 제외 지시문 + 프로필)가 모두 선택된 프리셋에 함께 저장됩니다.
+                                    </div>
 									
 									<!-- 프리셋 순서 변경 UI - 프롬프트 컨테이너 내부로 이동 -->
 									<div id="copybot_reorder_overlay" style="display: none;">
@@ -442,25 +679,6 @@
                                 </div>
                             </div>
                             
-                            <!-- [새로 추가될 UI] 대필 전용 프로필 설정 -->
-                            <div class="copybot_settings_item">
-                                <div class="copybot_settings_main">
-                                    <span class="copybot_settings_label">대필 전용 프로필</span>
-                                    <select id="copybot_ghostwrite_profile_select" class="text_pole" style="max-width: 150px;">
-                                        <option value="default">기본값 사용</option>
-                                        <!-- 프로필 목록은 나중에 자바스크립트로 채워집니다 -->
-                                    </select>
-									<!-- 프로필 목록 새로고침 버튼 -->
-									<span id="copybot_reload_profiles_button" title="프로필 목록 새로고침" class="fa-solid fa-sync-alt" style="margin-left: 8px; cursor: pointer; opacity: 0.7;"></span>
-                                </div>
-                                <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
-                                    대필 기능을 사용할 때만 일시적으로 전환할 API 프로필을 선택합니다.<br>
-                                    '기본값 사용'으로 두면 현재 연결된 프로필을 그대로 사용합니다.
-                                </div>
-								<div class="copybot_description" style="margin-top: 5px; font-size: 11px; color: #ff4d4d; font-weight: bold;">
-                                    * 실험적인 기능입니다.
-                            </div>
-                        </div>
 					</div>
 	
                         <!-- 편의기능 설정창 -->
@@ -607,8 +825,21 @@
                                         OFF
                                     </button>
                                 </div>
-                                                                <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
+                                <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
                                     채팅 입력창의 크기 조절 핸들을 제거합니다.
+                                </div>
+                            </div>
+                            
+                            <div class="copybot_settings_item">
+                                <div class="copybot_settings_main">
+                                    <span class="copybot_settings_label">입력창 안내문 없애기</span>
+                                    <button id="copybot_hide_placeholder_toggle" class="copybot_toggle_button" data-enabled="false">
+                                        OFF
+                                    </button>
+                                </div>
+                                <div class="copybot_description" style="margin-top: 10px; font-size:12px; color: #666;">
+                                    채팅 입력창의 '메시지를 입력하거나 /? 도와주기 위해' 문구를 숨깁니다.<br>
+                                    대필 임시 지시칸을 사용중일 때는 해당 칸의 안내문구도 함께 숨겨집니다.
                                 </div>
                             </div>
 						
@@ -713,7 +944,8 @@
                 misc: {
                     hqProfile: $('#copybot_hq_profile_toggle').attr('data-enabled') === 'true',
                     removeResize: $('#copybot_remove_resize_toggle').attr('data-enabled') === 'true',
-                    debugMode: $('#copybot_debug_mode_toggle').attr('data-enabled') === 'true'
+                    debugMode: $('#copybot_debug_mode_toggle').attr('data-enabled') === 'true',
+                    hidePlaceholder: $('#copybot_hide_placeholder_toggle').attr('data-enabled') === 'true'
                 }
 
             };
@@ -821,10 +1053,12 @@
                 // 각 설정값이 명시적으로 true일 때만 ON으로 설정합니다. (기본값 OFF)
                 const hqProfileEnabled = settings.misc.hqProfile === true;
                 const removeResizeEnabled = settings.misc.removeResize === true;
+                const hidePlaceholderEnabled = settings.misc.hidePlaceholder === true;
                 isDebugMode = settings.misc.debugMode === true;
 
                 $('#copybot_hq_profile_toggle').attr('data-enabled', hqProfileEnabled).text(hqProfileEnabled ? 'ON' : 'OFF');
                 $('#copybot_remove_resize_toggle').attr('data-enabled', removeResizeEnabled).text(removeResizeEnabled ? 'ON' : 'OFF');
+                $('#copybot_hide_placeholder_toggle').attr('data-enabled', hidePlaceholderEnabled).text(hidePlaceholderEnabled ? 'ON' : 'OFF');
                 $('#copybot_debug_mode_toggle').attr('data-enabled', isDebugMode).text(isDebugMode ? 'ON' : 'OFF');
 
 				if (isDebugMode) {
@@ -844,6 +1078,11 @@
                 if (removeResizeEnabled) {
                     removeResizeHandle();
                 }
+                
+                // placeholder 숨기기 설정 적용 (안전한 방식)
+                setTimeout(() => {
+                    safeApplyPlaceholderSetting();
+                }, 200);
             }
 
             debugLog('깡갤 복사기: 설정 로드 완료');
@@ -931,6 +1170,8 @@
             
             const tempPromptInput = document.createElement('textarea');
             tempPromptInput.id = 'copybot_temp_prompt';
+            
+            // CSS 기반이므로 항상 기본 placeholder 설정 (CSS에서 숨김 처리)
             tempPromptInput.placeholder = '대필 임시 지시문...';
             tempPromptInput.rows = 1;
             
@@ -1632,43 +1873,155 @@
 			return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 		}
 
+		// 활성 프리셋 관리 함수들
+		function setActivePreset(presetName) {
+			try {
+				localStorage.setItem('copybot_active_preset', presetName);
+				debugLog('활성 프리셋 설정:', presetName);
+			} catch (error) {
+				console.error('활성 프리셋 저장 실패:', error);
+			}
+		}
+
+		function getActivePreset() {
+			try {
+				const activePreset = localStorage.getItem('copybot_active_preset');
+				if (activePreset) {
+					// 활성 프리셋이 실제로 존재하는지 확인
+					const presets = getPresets();
+					const presetExists = presets.some(p => p.name === activePreset);
+					if (presetExists) {
+						debugLog('활성 프리셋 로드:', activePreset);
+						return activePreset;
+					} else {
+						// 프리셋이 삭제되었으면 활성 프리셋 정보도 제거
+						localStorage.removeItem('copybot_active_preset');
+						debugLog('활성 프리셋이 더 이상 존재하지 않아 제거됨:', activePreset);
+					}
+				}
+			} catch (error) {
+				console.error('활성 프리셋 로드 실패:', error);
+			}
+			return '기본 프리셋'; // 기본값
+		}
+
 		// localStorage에서 프리셋 목록을 가져오는 함수
 		function getPresets() {
 			try {
 				const presetsJSON = localStorage.getItem('copybot_presets');
-				return presetsJSON ? JSON.parse(presetsJSON) : [];
+				let presets = presetsJSON ? JSON.parse(presetsJSON) : [];
+				
+				// 기존 프리셋들의 하위 호환성 처리 (profile 필드 추가)
+				presets = presets.map(preset => {
+					if (!preset.hasOwnProperty('profile')) {
+						preset.profile = 'default'; // 기존 프리셋은 기본값으로 설정
+					}
+					return preset;
+				});
+				
+				// 기본 프리셋이 없거나 첫 번째가 아니면 자동으로 추가/이동
+				const defaultPresetIndex = presets.findIndex(p => p.name === '기본 프리셋');
+				if (defaultPresetIndex === -1) {
+					// 기본 프리셋이 없으면 맨 앞에 추가
+					presets.unshift({ name: '기본 프리셋', prompt: '', excludePrompt: '', profile: 'default' });
+				} else if (defaultPresetIndex !== 0) {
+					// 기본 프리셋이 있지만 첫 번째가 아니면 맨 앞으로 이동
+					const defaultPreset = presets.splice(defaultPresetIndex, 1)[0];
+					presets.unshift(defaultPreset);
+				}
+				
+				return presets;
 			} catch (e) {
 				console.error("프리셋 로딩 실패:", e);
-				return [];
+				return [{ name: '기본 프리셋', prompt: '', excludePrompt: '', profile: 'default' }];
 			}
 		}
+
 
 		// localStorage에 프리셋 목록을 저장하는 함수
 		function savePresets(presets) {
 			try {
+				// 기본 프리셋이 항상 첫 번째 위치에 오도록 보장
+				const defaultPresetIndex = presets.findIndex(p => p.name === '기본 프리셋');
+				if (defaultPresetIndex > 0) {
+					const defaultPreset = presets.splice(defaultPresetIndex, 1)[0];
+					presets.unshift(defaultPreset);
+				}
+				
 				localStorage.setItem('copybot_presets', JSON.stringify(presets));
 			} catch (e) {
 				console.error("프리셋 저장 실패:", e);
 			}
 		}
 
-		// 선택한 프리셋의 내용을 프롬프트 창에 불러오는 함수
+		// 선택한 프리셋의 내용을 프롬프트 창에 불러오는 함수 (강화된 버전)
 		function loadPreset(presetName) {
 			if (!presetName) {
-				$('#copybot_ghostwrite_textbox').val('');
-				$('#copybot_ghostwrite_exclude_textbox').val('');
-				return;
+				// 빈 문자열일 때는 기본 프리셋으로 처리 (하위 호환성)
+				presetName = '기본 프리셋';
 			}
 			const presets = getPresets();
 			const preset = presets.find(p => p.name === presetName);
 			if (preset) {
-				$('#copybot_ghostwrite_textbox').val(preset.prompt);
-				$('#copybot_ghostwrite_exclude_textbox').val(preset.excludePrompt);
+				// 프롬프트 텍스트 로드
+				$('#copybot_ghostwrite_textbox').val(preset.prompt || '');
+				$('#copybot_ghostwrite_exclude_textbox').val(preset.excludePrompt || '');
+				
+				// 마지막 저장값 업데이트 (중복 저장 방지용)
+				lastSavedValues.basicPrompt = preset.prompt || '';
+				lastSavedValues.excludePrompt = preset.excludePrompt || '';
+				lastSavedValues.profile = preset.profile || 'default';
+				
+				// 프로필 설정 로드 (향상된 안전성)
+				const loadProfileSafely = () => {
+					const profileSelect = $('#copybot_ghostwrite_profile_select');
+					const targetProfile = preset.profile || 'default';
+					
+					// 프로필 목록이 아직 로드되지 않았을 가능성을 고려
+					if (profileSelect.find('option').length <= 1) {
+						debugLog('프로필 목록이 아직 로드되지 않음, 프로필 목록 새로고침 후 재시도');
+						loadGhostwriteProfiles();
+					}
+					
+					// 선택 가능한 프로필인지 확인 후 설정
+					if (profileSelect.find(`option[value="${targetProfile}"]`).length > 0) {
+						profileSelect.val(targetProfile);
+						debugLog('프리셋 프로필 로드 성공:', targetProfile);
+					} else {
+						profileSelect.val('default'); // 프로필이 없으면 기본값으로
+						if (targetProfile !== 'default') {
+							debugLog('프리셋에 저장된 프로필을 찾을 수 없어 기본값으로 설정:', targetProfile);
+							// 사용자에게 알림 (디버그 모드에서만)
+							if (isDebugMode) {
+								toastr.warning(`저장된 프로필 '${targetProfile}'을 찾을 수 없어 기본값으로 설정되었습니다.`);
+							}
+						}
+					}
+					
+					// 프로필 로드 후 마지막 저장값도 업데이트
+					lastSavedValues.profile = profileSelect.val() || 'default';
+				};
+				
+				// 약간의 지연을 두고 프로필 로드 (UI 업데이트 완료 대기)
+				setTimeout(loadProfileSafely, 150);
+				
+			} else {
+				// 프리셋을 찾을 수 없으면 모든 필드 초기화
+				$('#copybot_ghostwrite_textbox').val('');
+				$('#copybot_ghostwrite_exclude_textbox').val('');
+				$('#copybot_ghostwrite_profile_select').val('default');
+				
+				// 마지막 저장값도 초기화
+				lastSavedValues.basicPrompt = '';
+				lastSavedValues.excludePrompt = '';
+				lastSavedValues.profile = 'default';
+				
+				debugLog('프리셋을 찾을 수 없음, 모든 필드 초기화:', presetName);
 			}
 		}
 
-		// 현재 프롬프트 내용을 저장하는 함수 (덮어쓰기 또는 새로 저장)
-		function saveCurrentPreset() {
+		// 하이브리드 저장용으로 개선된 프리셋 저장 함수
+		function saveCurrentPreset(isAutoSave = false) {
 			const selectedName = $('#copybot_preset_select').val();
 			let presets = getPresets();
 
@@ -1677,31 +2030,77 @@
 				if (presetToUpdate) {
 					presetToUpdate.prompt = $('#copybot_ghostwrite_textbox').val();
 					presetToUpdate.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+					presetToUpdate.profile = $('#copybot_ghostwrite_profile_select').val() || 'default';
 					savePresets(presets);
-					toastr.success(`'${escapeHtml(selectedName)}' 프리셋이 업데이트되었습니다.`);
+					// 저장된 프리셋을 활성 프리셋으로 설정
+					setActivePreset(selectedName);
+					
+					// 자동저장일 때는 토스트 메시지 생략
+					if (!isAutoSave) {
+						toastr.success(`'${escapeHtml(selectedName)}' 프리셋이 업데이트되고 현재 프리셋으로 설정되었습니다.`);
+					} else {
+						debugLog(`'${selectedName}' 프리셋 자동저장 완료`);
+					}
 				} else {
-					toastr.error(`'${escapeHtml(selectedName)}' 프리셋을 찾지 못해 업데이트에 실패했습니다.`);
+					if (!isAutoSave) {
+						toastr.error(`'${escapeHtml(selectedName)}' 프리셋을 찾지 못해 업데이트에 실패했습니다.`);
+					}
 				}
-			} else { // 시나리오 2: "프리셋 없음"일 때 (새로 저장)
-				let name = prompt("저장할 새 프리셋의 이름을 입력하세요:", "");
-				if (!name || name.trim() === '') {
-					if (name !== null) toastr.warning("프리셋 이름은 비워둘 수 없습니다.");
-					return;
-				}
-				name = name.trim();
-				const existingPreset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
-				if (existingPreset) {
-					if (!confirm(`'${existingPreset.name}' 프리셋이 이미 존재합니다. 덮어쓰시겠습니까?`)) return;
-					existingPreset.prompt = $('#copybot_ghostwrite_textbox').val();
-					existingPreset.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
-					toastr.success(`'${existingPreset.name}' 프리셋을 덮어썼습니다.`);
+
+			} else { 
+				// 시나리오 2: 드롭다운에서 빈 값("")이 선택된 경우
+				// 이제 기본 프리셋이 실제 객체로 존재하므로 이 경우는 발생하지 않아야 함
+				// 하위 호환성을 위해 기본 프리셋 업데이트로 처리
+				const defaultPreset = presets.find(p => p.name === '기본 프리셋');
+				if (defaultPreset) {
+					defaultPreset.prompt = $('#copybot_ghostwrite_textbox').val();
+					defaultPreset.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+					defaultPreset.profile = $('#copybot_ghostwrite_profile_select').val() || 'default';
+					savePresets(presets);
+					// 기본 프리셋도 활성 프리셋으로 설정
+					setActivePreset('기본 프리셋');
+					
+					if (!isAutoSave) {
+						toastr.success('기본 프리셋이 업데이트되고 현재 프리셋으로 설정되었습니다.');
+						updatePresetDropdown();
+						$('#copybot_preset_select').val('기본 프리셋');
+					} else {
+						debugLog('기본 프리셋 자동저장 완료');
+					}
 				} else {
-					presets.push({ name: name, prompt: $('#copybot_ghostwrite_textbox').val(), excludePrompt: $('#copybot_ghostwrite_exclude_textbox').val() });
-					toastr.success(`'${name}' 프리셋을 새로 저장했습니다.`);
+					// 예외 상황: 새 프리셋 생성 프로세스 유지 (자동저장에서는 실행하지 않음)
+					if (!isAutoSave) {
+						let name = prompt("저장할 새 프리셋의 이름을 입력하세요:", "");
+						if (!name || name.trim() === '') {
+							if (name !== null) toastr.warning("프리셋 이름은 비워둘 수 없습니다.");
+							return;
+						}
+						name = name.trim();
+						const existingPreset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
+						if (existingPreset) {
+							if (!confirm(`'${existingPreset.name}' 프리셋이 이미 존재합니다. 덮어쓰시겠습니까?`)) return;
+							existingPreset.prompt = $('#copybot_ghostwrite_textbox').val();
+							existingPreset.excludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
+							existingPreset.profile = $('#copybot_ghostwrite_profile_select').val() || 'default';
+							// 덮어쓴 프리셋을 활성 프리셋으로 설정
+							setActivePreset(existingPreset.name);
+							toastr.success(`'${existingPreset.name}' 프리셋이 덮어쓰기되고 현재 프리셋으로 설정되었습니다.`);
+						} else {
+							presets.push({ 
+								name: name, 
+								prompt: $('#copybot_ghostwrite_textbox').val(), 
+								excludePrompt: $('#copybot_ghostwrite_exclude_textbox').val(),
+								profile: $('#copybot_ghostwrite_profile_select').val() || 'default'
+							});
+							// 새로 생성된 프리셋을 활성 프리셋으로 설정
+							setActivePreset(name);
+							toastr.success(`'${name}' 프리셋이 새로 저장되고 현재 프리셋으로 설정되었습니다.`);
+						}
+						savePresets(presets);
+						updatePresetDropdown();
+						$('#copybot_preset_select').val(name);
+					}
 				}
-				savePresets(presets);
-				updatePresetDropdown();
-				$('#copybot_preset_select').val(name);
 			}
 		}
 
@@ -1723,9 +2122,16 @@
 
 		// 프리셋 삭제 함수
 		function deletePreset(nameToDelete) {
+			// 기본 프리셋 삭제 방지
+			if (nameToDelete === '기본 프리셋') {
+				toastr.error('기본 프리셋은 삭제할 수 없습니다.');
+				return false;
+			}
+			
 			let presets = getPresets();
 			savePresets(presets.filter(p => p.name !== nameToDelete));
-			loadPreset('');
+			loadPreset('기본 프리셋'); // 삭제 후 기본 프리셋으로 이동
+			return true;
 		}
 
 		// 새 프리셋 추가 함수
@@ -1737,7 +2143,7 @@
 			while (presets.some(p => p.name === newName)) {
 				newName = `${newNameBase} ${++counter}`;
 			}
-			presets.push({ name: newName, prompt: "", excludePrompt: "" });
+			presets.push({ name: newName, prompt: "", excludePrompt: "", profile: "default" });
 			savePresets(presets);
 			updatePresetDropdown();
 			$('#copybot_preset_select').val(newName);
@@ -1751,7 +2157,7 @@
 			let presets = getPresets();
 			
 			if (!originalName) {
-				// "프리셋 없음" 상태일 때 - 현재 입력된 내용으로 새 프리셋 생성
+				// 예외 상황: 현재 입력된 내용으로 새 프리셋 생성
 				const currentPrompt = $('#copybot_ghostwrite_textbox').val();
 				const currentExcludePrompt = $('#copybot_ghostwrite_exclude_textbox').val();
 				
@@ -1763,11 +2169,11 @@
 				}
 				
 				const newPreset = { 
-					name: newName, 
-					prompt: currentPrompt || '', 
-					excludePrompt: currentExcludePrompt || '' 
-				};
-				// "기본 프리셋" 상태에서는 맨 끝에 추가
+				name: newName, 
+				prompt: currentPrompt || '', 
+				excludePrompt: currentExcludePrompt || '',
+				profile: $('#copybot_ghostwrite_profile_select').val() || 'default'
+			};
 				presets.push(newPreset);
 				savePresets(presets);
 				toastr.success(`현재 입력 내용이 '${escapeHtml(newName)}'으로 저장되었습니다.`);
@@ -1781,20 +2187,25 @@
 				toastr.error("원본 프리셋을 찾을 수 없습니다.");
 				return;
 			}
-			let newName = `${originalName} (1)`;
+			
+			// 기본 프리셋 복사 시 이름 처리
+			const baseName = originalName === '기본 프리셋' ? '기본 프리셋 복사본' : originalName;
+			let newName = `${baseName} (1)`;
 			let counter = 1;
 			while (presets.some(p => p.name === newName)) {
 				counter++;
-				newName = `${originalName} (${counter})`;
+				newName = `${baseName} (${counter})`;
 			}
-			const newPreset = { name: newName, prompt: originalPreset.prompt, excludePrompt: originalPreset.excludePrompt };
+			
+			const newPreset = { name: newName, prompt: originalPreset.prompt, excludePrompt: originalPreset.excludePrompt, profile: originalPreset.profile || 'default' };
 			const originalIndex = presets.findIndex(p => p.name === originalName);
 			
-			// 원본 프리셋의 바로 다음 위치에 삽입
-			if (originalIndex !== -1) {
+			// 기본 프리셋의 경우 두 번째 위치에 삽입, 다른 프리셋은 원본 다음에 삽입
+			if (originalName === '기본 프리셋') {
+				presets.splice(1, 0, newPreset); // 기본 프리셋 바로 다음(인덱스 1)에 삽입
+			} else if (originalIndex !== -1) {
 				presets.splice(originalIndex + 1, 0, newPreset);
 			} else {
-				// 혹시 원본을 못 찾으면 맨 끝에 추가
 				presets.push(newPreset);
 			}
 			
@@ -1807,8 +2218,12 @@
 		// 프리셋 순서 변경 함수
 		function reorderPresets(newOrderNameArray) {
 			const presets = getPresets();
+			const defaultPreset = presets.find(p => p.name === '기본 프리셋');
 			const reorderedPresets = newOrderNameArray.map(name => presets.find(p => p.name === name)).filter(Boolean);
-			savePresets(reorderedPresets);
+			
+			// 기본 프리셋을 맨 앞에 추가하고 나머지 재정렬된 프리셋들을 뒤에 붙임
+			const finalPresets = defaultPreset ? [defaultPreset, ...reorderedPresets] : reorderedPresets;
+			savePresets(finalPresets);
 		}
 
 		// --- UI 제어 함수들 ---
@@ -1820,11 +2235,14 @@
 			const presets = getPresets();
 			const select = $('#copybot_preset_select');
 			const selectedValue = select.val(); // 현재 선택된 값 기억
+			
+			// 활성 프리셋 우선 선택 로직
+			const activePreset = getActivePreset();
 
 			// 1. 드롭다운 메뉴를 완전히 새로 구성합니다.
 			select.empty();
-			select.append('<option value="">기본 프리셋</option>');
-
+			
+			// 기본 프리셋을 실제 프리셋 배열에서 가져와서 표시
 			presets.forEach(preset => {
 				select.append($('<option>', { value: preset.name, text: escapeHtml(preset.name) }));
 			});
@@ -1833,21 +2251,30 @@
 			select.append('<option value="" disabled>──────────</option>');
 			select.append('<option value="__add__" class="copybot_preset_management_option">+ 새 프리셋 추가</option>');
 			
-			// 프리셋이 2개 이상일 때만 순서 변경 기능 표시
-			if (presets.length > 1) {
+			// 기본 프리셋을 제외한 프리셋이 2개 이상일 때만 순서 변경 기능 표시
+			const reorderablePresets = presets.filter(p => p.name !== '기본 프리셋');
+			if (reorderablePresets.length > 1) {
 				select.append('<option value="__reorder__" class="copybot_preset_management_option">+ 프리셋 순서 변경</option>');
 			}
 			
 			// "현재 프리셋 복사" 기능을 항상 표시
 			select.append('<option value="__copy__" class="copybot_preset_management_option">+ 현재 프리셋 복사</option>');
 			
-			// 3. 이전에 선택했던 값을 그대로 다시 선택해줍니다.
-			select.val(selectedValue);
-			
-			// 4. 현재 선택된 값을 data 속성에 저장 (관리 메뉴에서 복원용)
-			select.data('previousValue', selectedValue);
-		}
+			// 3. 선택할 값 결정 우선순위: 현재 선택값 > 활성 프리셋 > 기본 프리셋
+			let valueToSelect;
+			if (selectedValue && selectedValue !== '' && presets.some(p => p.name === selectedValue)) {
+				valueToSelect = selectedValue; // 현재 선택값이 유효하면 유지
+			} else if (activePreset && presets.some(p => p.name === activePreset)) {
+				valueToSelect = activePreset; // 활성 프리셋이 있으면 선택
+			} else {
+				valueToSelect = '기본 프리셋'; // 기본값
+			}
 
+			select.val(valueToSelect);
+
+			// 4. 현재 선택된 값을 data 속성에 저장 (관리 메뉴에서 복원용)
+			select.data('previousValue', valueToSelect);
+		}
 
 		// 편집 모드 진입
 		function enterPresetEditMode() {
@@ -1855,9 +2282,21 @@
 			const selectedPresetName = $('#copybot_preset_select').val();
 			$('#copybot_preset_save, #copybot_preset_edit').hide();
 			$('#copybot_preset_confirm, #copybot_preset_cancel').show();
-			if (selectedPresetName) $('#copybot_preset_delete').show();
+			
+			// 기본 프리셋이 아닐 때만 삭제 버튼 표시
+			if (selectedPresetName && selectedPresetName !== '기본 프리셋') {
+				$('#copybot_preset_delete').show();
+			}
+			
 			$('#copybot_preset_select').hide();
-			$('#copybot_preset_rename_input').val(selectedPresetName).show().trigger('focus');
+			
+			// 기본 프리셋일 때는 이름 변경 입력창 비활성화
+			if (selectedPresetName === '기본 프리셋') {
+				$('#copybot_preset_rename_input').val(selectedPresetName).show().prop('disabled', true);
+			} else {
+				$('#copybot_preset_rename_input').val(selectedPresetName).show().prop('disabled', false).trigger('focus');
+			}
+			
 			$('#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').prop('disabled', true);
 		}
 		
@@ -1866,15 +2305,18 @@
 			const selectedPreset = $('#copybot_preset_select').val();
 			const editButton = $('#copybot_preset_edit');
 			
-			if (!selectedPreset) {
-				// 기본 프리셋 선택 시 편집 버튼 비활성화
+			if (selectedPreset === '기본 프리셋') {
+				// 기본 프리셋은 편집 버튼 비활성화
 				editButton.addClass('disabled').attr('title', '기본 프리셋은 편집할 수 없습니다');
-			} else {
-				// 다른 프리셋 선택 시 편집 버튼 활성화
+			} else if (selectedPreset) {
+				// 다른 프리셋은 편집 가능
 				editButton.removeClass('disabled').attr('title', '프리셋 편집 모드 시작');
+			} else {
+				// 선택된 프리셋이 없는 경우 (예외 상황)
+				editButton.addClass('disabled').attr('title', '편집할 프리셋을 선택하세요');
 			}
 		}
-
+		
 		// 편집 모드 종료
 		function exitPresetEditMode(forceUpdate = false) {
 			if (!isPresetEditMode && !forceUpdate) return;
@@ -1890,10 +2332,18 @@
 		// 순서 변경 인라인 UI 열기
 		function openReorderModal() {
 			const presets = getPresets();
+			// 기본 프리셋을 제외한 프리셋들만 순서변경 대상으로 처리
+			const reorderablePresets = presets.filter(p => p.name !== '기본 프리셋');
+			
+			if (reorderablePresets.length <= 1) {
+				toastr.info('순서를 변경할 수 있는 프리셋이 2개 이상 있어야 합니다.');
+				return;
+			}
+			
 			const list = $('#copybot_reorder_list').empty();
-			presets.forEach((preset, index) => {
+			reorderablePresets.forEach((preset, index) => {
 				const isFirst = index === 0;
-				const isLast = index === presets.length - 1;
+				const isLast = index === reorderablePresets.length - 1;
 				const upButton = isFirst ? '' : '<button class="copybot_move_up" style="margin-right: 5px; padding: 2px 6px; font-size: 12px;">↑</button>';
 				const downButton = isLast ? '' : '<button class="copybot_move_down" style="margin-left: 5px; padding: 2px 6px; font-size: 12px;">↓</button>';
 				
@@ -1927,30 +2377,35 @@
     // --- 프리셋 관리 이벤트 핸들러 (신규/수정) ---
     // ---------------------------------------------
 
-    // 기존 방식 저장 (💾 아이콘)
-    $(document).off('click', '#copybot_preset_save').on('click', '#copybot_preset_save', saveCurrentPreset);
-
     // 편집 모드 시작 (⚙️ 아이콘)
     $(document).off('click', '#copybot_preset_edit').on('click', '#copybot_preset_edit', function() {
         // 비활성화된 상태면 클릭 무시
         if ($(this).hasClass('disabled')) {
             return false;
         }
+        
+        // 기본 프리셋 편집 시도 시 추가 차단
+        const selectedPreset = $('#copybot_preset_select').val();
+        if (selectedPreset === '기본 프리셋') {
+            toastr.warning('기본 프리셋은 편집할 수 없습니다.');
+            return false;
+        }
+        
         enterPresetEditMode();
     });
 
     // 편집 취소 (❌ 아이콘)
     $(document).off('click', '#copybot_preset_cancel').on('click', '#copybot_preset_cancel', () => exitPresetEditMode(true));
 
-    // 프리셋 선택 또는 관리 기능 실행 (드롭다운)
-    $(document).off('change', '#copybot_preset_select').on('change', '#copybot_preset_select', function() {
-        const selectedValue = $(this).val();
-        // 관리 메뉴 선택 전의 원래 선택된 값을 data 속성에서 가져오기
-        const originalValue = $(this).data('previousValue') || '';
+    // 프리셋 선택 또는 관리 기능 실행 (드롭다운) - 즉시 활성화 기능 추가
+	$(document).off('change', '#copybot_preset_select').on('change', '#copybot_preset_select', function() {
+		const selectedValue = $(this).val();
+		// 관리 메뉴 선택 전의 원래 선택된 값을 data 속성에서 가져오기
+		const originalValue = $(this).data('previousValue') || '기본 프리셋';
 
-        if (selectedValue === '__add__') {
-            addNewPreset();
-        } else if (selectedValue === '__reorder__') {
+		if (selectedValue === '__add__') {
+			addNewPreset();
+		} else if (selectedValue === '__reorder__') {
 			$(this).val(originalValue); // 드롭다운 값 원상복구
 			openReorderModal();
 		} else if (selectedValue === '__copy__') {
@@ -1958,21 +2413,39 @@
 			$(this).val(originalValue);
 			copyCurrentPreset();
 		} else {
-            // 일반 프리셋 선택 - 현재 값을 data 속성에 저장
-            $(this).data('previousValue', selectedValue);
-            loadPreset(selectedValue);
+			// 일반 프리셋 선택 - 현재 값을 data 속성에 저장
+			$(this).data('previousValue', selectedValue);
+			
+			// 프리셋 로드 전에 프로필 목록 최신 상태 확인
+			const profileSelect = $('#copybot_ghostwrite_profile_select');
+			if (profileSelect.find('option').length <= 1) {
+				loadGhostwriteProfiles();
+			}
+			
+			// 프리셋 로드 (프로필 포함)
+			loadPreset(selectedValue);
+			
+			// 🔥 9단계 신규: 프리셋 선택 즉시 활성 프리셋으로 설정
+			setActivePreset(selectedValue);
+			debugLog('프리셋 선택과 동시에 활성 프리셋으로 설정:', selectedValue);
+			
 			updatePresetDropdown();
-			updatePresetEditButtonState(); // 버튼 상태 업데이트 추가
-            if (isPresetEditMode) {
-                $('#copybot_preset_rename_input').val(selectedValue);
-                if (selectedValue) {
-                    $('#copybot_preset_delete').show();
-                } else {
-                    $('#copybot_preset_delete').hide();
-                }
-            }
-        }
-    });
+			updatePresetEditButtonState();
+			
+			// 편집 모드일 때 추가 처리
+			if (isPresetEditMode) {
+				$('#copybot_preset_rename_input').val(selectedValue);
+				// 기본 프리셋이 아닐 때만 삭제 버튼 표시
+				if (selectedValue && selectedValue !== '기본 프리셋') {
+					$('#copybot_preset_delete').show();
+				} else {
+					$('#copybot_preset_delete').hide();
+				}
+			}
+			
+			debugLog('프리셋 선택 및 로드 완료:', selectedValue);
+		}
+	});
 
     // 이름 변경 저장 (✔️ 아이콘)
     $(document).off('click', '#copybot_preset_confirm').on('click', '#copybot_preset_confirm', function() {
@@ -1985,6 +2458,12 @@
         }
         if (!newName) {
             toastr.error('프리셋 이름은 비워둘 수 없습니다.');
+            return;
+        }
+        
+        // 기본 프리셋 이름 변경 방지
+        if (oldName === '기본 프리셋') {
+            toastr.warning('기본 프리셋의 이름은 변경할 수 없습니다.');
             return;
         }
         
@@ -2004,9 +2483,12 @@
         }
         
         if (confirm(`'${escapeHtml(nameToDelete)}' 프리셋을 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-            deletePreset(nameToDelete);
-            toastr.success(`'${escapeHtml(nameToDelete)}' 프리셋이 삭제되었습니다.`);
-            exitPresetEditMode(true);
+            if (deletePreset(nameToDelete)) {
+                toastr.success(`'${escapeHtml(nameToDelete)}' 프리셋이 삭제되었습니다.`);
+                exitPresetEditMode(true);
+                $('#copybot_preset_select').val('기본 프리셋'); // 삭제 후 기본 프리셋으로 선택
+            }
+            // deletePreset 함수에서 false 반환 시 (기본 프리셋 삭제 시도) 에러 메시지가 이미 표시됨
         }
     });
 
@@ -2184,6 +2666,7 @@
                 'copybot_temp_field_toggle': addTempPromptField,
                 'copybot_hq_profile_toggle': () => newState ? enableHighQualityProfiles() : disableHighQualityProfiles(),
                 'copybot_remove_resize_toggle': () => newState ? removeResizeHandle() : restoreResizeHandle(),
+                'copybot_hide_placeholder_toggle': () => newState ? hidePlaceholder() : restorePlaceholder(),
                 'copybot_debug_mode_toggle': () => { isDebugMode = newState; $('#copybot_debug_info').slideToggle(newState); },
             };
             const defaultAction = () => $(`#${button.attr('id').replace('_toggle', '_options')}`).slideToggle(newState);
@@ -2212,6 +2695,10 @@
         const currentlySelected = $('#copybot_ghostwrite_profile_select').val();
         loadGhostwriteProfiles();
         $('#copybot_ghostwrite_profile_select').val(currentlySelected);
+        
+        // 🔥 9단계 신규: 프로필 새로고침 시 피드백 표시
+        showStatusIcon('profile', false); // ✅ 표시 후 페이드아웃
+        
         toastr.success('프로필 목록을 새로고침했습니다.');
         const icon = $(this);
         icon.addClass('fa-spin');
@@ -2231,8 +2718,75 @@
         saveSettings();
     });
     
-    $(document).off('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox').on('input', '#copybot_ghostwrite_textbox, #copybot_ghostwrite_exclude_textbox', saveSettings);
-    $(document).off('change', '#copybot_ghostwrite_profile_select').on('change', '#copybot_ghostwrite_profile_select', saveSettings);
+    // 하이브리드 자동저장 - 대필 기본 지시문 텍스트박스 이벤트 (일관성을 위해 동일하게 수정)
+    $(document).off('input focus blur', '#copybot_ghostwrite_textbox'); // 기존 모든 핸들러 제거
+    
+    // input 이벤트 (디바운싱 저장)
+    $(document).on('input', '#copybot_ghostwrite_textbox', function(e) {
+        debugLog('basicPrompt input 이벤트 감지:', e.target.value);
+        scheduleDebounceAutoSave('basicPrompt');
+        saveSettings();
+    });
+    
+    // blur 이벤트 (즉시 저장)
+    $(document).on('blur', '#copybot_ghostwrite_textbox', function(e) {
+        debugLog('basicPrompt blur 이벤트 감지:', e.target.value);
+        scheduleImmediateAutoSave('basicPrompt', 'blur');
+        saveSettings();
+    });
+    
+    // focus 이벤트
+    $(document).on('focus', '#copybot_ghostwrite_textbox', function(e) {
+        debugLog('basicPrompt focus 이벤트');
+        saveSettings();
+    });
+
+    // 🔥 핸들러 중복 문제 해결: 대필 제외 지시문 텍스트박스 이벤트 (강제 재등록)
+    $(document).off('input focus blur', '#copybot_ghostwrite_exclude_textbox'); // 기존 모든 핸들러 제거
+    
+    // input 이벤트 (디바운싱 저장)
+    $(document).on('input', '#copybot_ghostwrite_exclude_textbox', function(e) {
+        debugLog('excludePrompt input 이벤트 감지:', e.target.value);
+        scheduleDebounceAutoSave('excludePrompt');
+        saveSettings();
+    });
+    
+    // blur 이벤트 (즉시 저장) - 별도 등록으로 우선순위 확보
+    $(document).on('blur', '#copybot_ghostwrite_exclude_textbox', function(e) {
+        debugLog('excludePrompt blur 이벤트 감지:', e.target.value);
+        debugLog('excludePrompt blur 이벤트 → scheduleImmediateAutoSave 호출');
+        scheduleImmediateAutoSave('excludePrompt', 'blur');
+        saveSettings();
+    });
+    
+    // focus 이벤트
+    $(document).on('focus', '#copybot_ghostwrite_exclude_textbox', function(e) {
+        debugLog('excludePrompt focus 이벤트');
+        saveSettings();
+    });
+
+    // 하이브리드 자동저장 - 프로필 선택 드롭다운 이벤트 (피드백 기능 추가)
+    $(document).off('change', '#copybot_ghostwrite_profile_select').on('change', '#copybot_ghostwrite_profile_select', function() {
+        // 프로필 변경: 즉시 저장
+        scheduleImmediateAutoSave('profile', 'change');
+        
+        // 🔥 9단계 신규: 프로필 변경 시 즉시 피드백 표시
+        showStatusIcon('profile', false); // ✅ 표시 후 페이드아웃
+        debugLog('프로필 변경됨, 피드백 표시');
+        
+        // 기존 일반 설정 저장도 유지
+        saveSettings();
+        
+        // 프로필 변경 시 현재 활성 프리셋이 있다면 자동 저장할지 묻기 (선택사항)
+        const activePreset = getActivePreset();
+        const currentPreset = $('#copybot_preset_select').val();
+        if (activePreset && currentPreset && activePreset === currentPreset && currentPreset !== '기본 프리셋') {
+            if (isDebugMode) {
+                debugLog('프로필이 변경됨, 현재 활성 프리셋:', activePreset);
+            }
+        }
+    });
+
     $(document).off('click', '#copybot_settings_panel, #copybot_ghostwrite_panel, #copybot_misc_panel').on('click', (e) => e.stopPropagation());
 
     debugLog('깡갤 복사기: 이벤트 핸들러 설정 완료');
@@ -2268,32 +2822,46 @@
     }
 
 
-    // 프로필 목록 로드 함수 (단순화)
-    function loadGhostwriteProfiles() {
-        try {
-            const profileSelect = $('#copybot_ghostwrite_profile_select');
-            const connectionProfilesDropdown = document.querySelector('#connection_profiles');
-            
-            if (!connectionProfilesDropdown) {
-                debugLog('연결 프로필 드롭다운을 찾을 수 없음');
-                return;
-            }
+    // 프로필 목록 로드 함수 (강화된 버전)
+	function loadGhostwriteProfiles() {
+		try {
+			const profileSelect = $('#copybot_ghostwrite_profile_select');
+			const connectionProfilesDropdown = document.querySelector('#connection_profiles');
+			
+			if (!connectionProfilesDropdown) {
+				debugLog('연결 프로필 드롭다운을 찾을 수 없음');
+				return;
+			}
 
-            // 기존 옵션 제거 (기본값 제외)
-            profileSelect.find('option:not(:first)').remove();
-            
-            // SillyTavern의 프로필 목록에서 옵션 추가
-            Array.from(connectionProfilesDropdown.options).forEach(option => {
-                if (option.value && option.value !== '') {
-                    profileSelect.append(`<option value="${option.value}">${option.text}</option>`);
-                }
-            });
-            
-            debugLog('대필 프로필 목록 로드 완료:', profileSelect.find('option').length - 1, '개');
-        } catch (error) {
-            console.error('깡캐 복사기: 프로필 목록 로드 실패', error);
-        }
-    }
+			// 현재 선택된 값 백업
+			const currentSelectedProfile = profileSelect.val();
+			
+			// 기존 옵션 제거 (기본값 제외)
+			profileSelect.find('option:not(:first)').remove();
+			
+			// SillyTavern의 프로필 목록에서 옵션 추가
+			const availableProfiles = [];
+			Array.from(connectionProfilesDropdown.options).forEach(option => {
+				if (option.value && option.value !== '') {
+					profileSelect.append(`<option value="${option.value}">${option.text}</option>`);
+					availableProfiles.push(option.value);
+				}
+			});
+			
+			// 이전에 선택된 값이 여전히 존재하면 복원, 없으면 기본값
+			if (currentSelectedProfile && availableProfiles.includes(currentSelectedProfile)) {
+				profileSelect.val(currentSelectedProfile);
+			} else if (currentSelectedProfile && currentSelectedProfile !== 'default') {
+				profileSelect.val('default');
+				debugLog('이전에 선택된 프로필이 더 이상 존재하지 않아 기본값으로 변경:', currentSelectedProfile);
+			}
+			
+			debugLog('대필 프로필 목록 로드 완료:', availableProfiles.length, '개');
+		} catch (error) {
+			console.error('깡갤 복사기: 프로필 목록 로드 실패', error);
+		}
+	}
+
 
         async function switchProfile(targetProfileId, isRestore = false) {
         try {
@@ -2342,14 +2910,22 @@
                 setupEventHandlers();
                 
                 setTimeout(() => {
-                    loadSettings();
-                    loadTempPrompt();
-                    addTempPromptField();
-                    updateActionButtons();
-                    loadGhostwriteProfiles(); // 프로필 목록 로드 추가
-                    updatePresetDropdown(); // 프리셋 드롭다운 메뉴 초기화
-					updatePresetEditButtonState(); // 편집 버튼 상태 초기화
-					
+				loadSettings();
+				loadTempPrompt();
+				addTempPromptField();
+				updateActionButtons();
+				loadGhostwriteProfiles(); // 프로필 목록 로드 추가
+				updatePresetDropdown(); // 프리셋 드롭다운 메뉴 초기화
+				updatePresetEditButtonState(); // 편집 버튼 상태 초기화
+				
+				// 활성 프리셋 자동 로드
+				const activePreset = getActivePreset();
+				if (activePreset) {
+					$('#copybot_preset_select').val(activePreset);
+					loadPreset(activePreset);
+					debugLog('초기화 시 활성 프리셋 자동 로드:', activePreset);
+				}
+
                     // 강화된 다중 시점 아이콘 업데이트 시도
                     scheduleIconUpdates();
                 }, 100);
@@ -2375,6 +2951,9 @@
                 loadTempPrompt();
                 // 이벤트 기반 아이콘 업데이트도 안전한 방식으로 변경
                 safeUpdateInputFieldIcons(); 
+                
+                // placeholder 설정 재적용 (안전한 방식)
+                safeApplyPlaceholderSetting();
             }, 500);
         });
         
@@ -2414,4 +2993,96 @@
     });
 
     console.log('깡갤 복사기 확장프로그램이 로드되었습니다.');
+
+    // 🔥 10단계 테스트: 하이브리드 자동저장 동작 테스트 함수
+    function testHybridAutoSave() {
+        if (!isDebugMode) {
+            console.log('하이브리드 자동저장 테스트는 디버그 모드에서만 실행 가능합니다.');
+            return;
+        }
+        
+        console.log('🧪 하이브리드 자동저장 테스트 시작...');
+        
+        // 테스트마다 고유값 생성 (중복 방지)
+        const timestamp = Date.now();
+        
+        // 테스트 1: 디바운싱 테스트 (고유값으로 변경)
+        console.log('테스트 1: 디바운싱 (0.5초 지연) - 아이콘 4초간 표시');
+        $('#copybot_ghostwrite_textbox').val(`테스트 디바운싱 ${timestamp}`).trigger('input');
+        
+        setTimeout(() => {
+            // 테스트 2: Blur 즉시 저장 테스트 (강화된 방식)
+            console.log('테스트 2: Blur 즉시 저장 - 아이콘 4초간 표시');
+            const excludeTextbox = $('#copybot_ghostwrite_exclude_textbox');
+            
+            // 현재 값 확인 후 다른 값으로 설정
+            const currentExcludeValue = excludeTextbox.val();
+            const newExcludeValue = `테스트 블러 ${timestamp}`;
+            
+            console.log(`excludePrompt 값 변경: "${currentExcludeValue}" -> "${newExcludeValue}"`);
+            
+            // 값 변경 → 포커스 → 블러 순서로 실행
+            excludeTextbox.val(newExcludeValue);
+            
+            setTimeout(() => {
+                excludeTextbox.focus();
+                setTimeout(() => {
+                    excludeTextbox.blur();
+                    console.log('blur 이벤트 트리거 완료');
+                }, 200);
+            }, 100);
+            
+            setTimeout(() => {
+                // 테스트 3: 프로필 변경 즉시 저장 테스트
+                console.log('테스트 3: 프로필 변경 즉시 저장 - 아이콘 4초간 표시');
+                const profileSelect = $('#copybot_ghostwrite_profile_select');
+                const currentValue = profileSelect.val();
+                
+                // 다른 값으로 변경해서 실제 변경사항이 생기도록 함
+                const optionCount = profileSelect.find('option').length;
+                if (optionCount > 1) {
+                    const newIndex = currentValue === 'default' ? 1 : 0;
+                    const newValue = profileSelect.find('option').eq(newIndex).val();
+                    profileSelect.val(newValue).trigger('change');
+                    console.log(`프로필 값 변경: ${currentValue} -> ${newValue}`);
+                } else {
+                    profileSelect.trigger('change'); // 옵션이 하나뿐이면 그냥 트리거
+                }
+                
+                setTimeout(() => {
+                    console.log('🧪 하이브리드 자동저장 테스트 완료!');
+                    console.log('🔍 각 라벨 옆 상태 아이콘들을 확인하세요 (4초간 ✅ 표시 후 페이드아웃)');
+                    
+                    // 테스트 완료 후 상태 아이콘 요소들이 실제로 존재하는지 확인
+                    console.log('--- 상태 아이콘 요소 존재 여부 확인 ---');
+                    console.log('basicPrompt 아이콘:', $('#copybot_basic_prompt_status').length > 0 ? '존재' : '없음');
+                    console.log('excludePrompt 아이콘:', $('#copybot_exclude_prompt_status').length > 0 ? '존재' : '없음');  
+                    console.log('profile 아이콘:', $('#copybot_profile_status').length > 0 ? '존재' : '없음');
+                    
+                    // 현재 각 필드의 최종 값도 확인
+                    console.log('--- 현재 필드 값 확인 ---');
+                    console.log('basicPrompt 현재값:', $('#copybot_ghostwrite_textbox').val());
+                    console.log('excludePrompt 현재값:', $('#copybot_ghostwrite_exclude_textbox').val());
+                    console.log('profile 현재값:', $('#copybot_ghostwrite_profile_select').val());
+                    
+                    // 추가 진단: 이벤트 핸들러가 제대로 연결되었는지 확인
+                    console.log('--- 이벤트 핸들러 연결 상태 확인 ---');
+                    const excludeTextbox = $('#copybot_ghostwrite_exclude_textbox')[0];
+                    if (excludeTextbox) {
+                        const events = $._data(excludeTextbox, 'events');
+                        console.log('excludePrompt 연결된 이벤트들:', events);
+                        if (events && events.blur) {
+                            console.log('blur 이벤트 핸들러 개수:', events.blur.length);
+                        } else {
+                            console.log('❌ blur 이벤트 핸들러가 연결되지 않음!');
+                        }
+                    }
+                }, 1500);
+            }, 1500); // blur 이벤트 처리 대기
+        }, 1200); // 디바운싱 완료 대기
+    }
+    
+    // 전역 테스트 함수로 노출 (콘솔에서 실행 가능)
+    window.testCopybotHybridSave = testHybridAutoSave;
+
 })();
