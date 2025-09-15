@@ -628,23 +628,28 @@
 .copybot_input_row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    flex-wrap: nowrap;
+    gap: 8px;
+    flex-wrap: nowrap; /* 기본적으로는 줄바꿈 금지 */
     margin-bottom: 4px;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .copybot_input_group {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex: 0 0 auto;
+    min-width: 0; /* 축소 허용 */
 }
 
 .copybot_input_group label {
-    min-width: 60px;
+    min-width: 50px;
     color: #4a5568;
     font-weight: 500;
     font-size: 13px;
     white-space: nowrap;
+    flex-shrink: 1; /* 필요시 축소 허용 */
 }
 
 /* 숫자 입력창 작게 */
@@ -659,6 +664,7 @@
     text-align: center;
     transition: all 0.2s ease;
     box-sizing: border-box;
+    flex-shrink: 1; /* 필요시 축소 허용 */
 }
 
 .copybot_input_group input.text_pole:focus {
@@ -782,38 +788,76 @@
     /* 기본: 줄바꿈 방지 */
     white-space: nowrap !important;
     
-    /* 폰트 크기: 구형 브라우저용 fallback */
-    font-size: 12px !important; /* IE 등을 위한 기본값 */
-    font-size: calc(0.75em + 0.5vw) !important; /* 현대 브라우저용 자동조절 */
+    /* 적당한 고정 폰트 크기 (너무 작아지지 않게) */
+    font-size: 12px !important;
     
-    /* 버튼 크기: 유연하면서도 안정적 */
+    /* 적절한 버튼 크기 - 축소 가능하지만 너무 작아지지 않게 */
     width: auto !important;
-    min-width: 3.5em !important; /* em 기반으로 폰트 크기에 비례 */
-    max-width: 6em !important; /* 너무 커지지 않도록 제한 */
-    flex: 0 0 auto !important; /* flex 축소 방지 */
+    min-width: 3em !important;   /* 적당한 최소 크기 */
+    max-width: 4.5em !important; /* 적당한 최대 크기 */
+    flex: 0 1 auto !important;   /* 필요시 축소 허용 */
     
-    /* 패딩: 폰트 크기에 비례하여 조절 */
-    padding: 0.5em 0.8em !important;
+    /* 적당한 패딩 */
+    padding: 6px 10px !important;
     
     /* 텍스트 중앙 정렬 */
     text-align: center !important;
+    
+    /* 오버플로우 처리 */
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 /* 화면 크기별 세부 조정 */
 @media (max-width: 480px) {
     #copybot_hide_execute, #copybot_unhide_execute {
-        font-size: 11px !important; /* 작은 화면용 fallback */
-        font-size: calc(0.7em + 0.6vw) !important;
-        min-width: 3.2em !important;
+        font-size: 11px !important;
+        min-width: 2.8em !important;
+        max-width: 4em !important;
+        padding: 5px 8px !important;
+    }
+    
+    .copybot_input_row {
+        gap: 6px;
+    }
+    
+    .copybot_input_group label {
+        min-width: 45px;
+        font-size: 12px;
+    }
+    
+    .copybot_input_group input.text_pole {
+        width: 45px !important;
+        padding: 6px 5px !important;
+        font-size: 13px !important;
     }
 }
 
 @media (max-width: 360px) {
     #copybot_hide_execute, #copybot_unhide_execute {
-        font-size: 10px !important; /* 매우 작은 화면용 fallback */
-        font-size: calc(0.65em + 0.8vw) !important;
-        min-width: 3em !important;
-        padding: 0.4em 0.6em !important;
+        font-size: 10px !important;
+        min-width: 2.5em !important;
+        max-width: 3.8em !important;
+        padding: 4px 6px !important;
+    }
+    
+    .copybot_input_row {
+        gap: 5px;
+    }
+    
+    .copybot_input_group {
+        gap: 3px;
+    }
+    
+    .copybot_input_group label {
+        min-width: 40px;
+        font-size: 11px;
+    }
+    
+    .copybot_input_group input.text_pole {
+        width: 40px !important;
+        padding: 5px 3px !important;
+        font-size: 12px !important;
     }
 }
 
@@ -1321,4 +1365,54 @@
     width: 100%;
     max-width: none;
     box-sizing: border-box;
+}
+
+/* 극단적으로 작은 화면에서만 줄바꿈 허용 */
+@media (max-width: 240px) {
+    .copybot_input_row {
+        flex-wrap: wrap !important; /* 정말 작은 화면에서만 줄바꿈 */
+    }
+    
+    #copybot_hide_execute, #copybot_unhide_execute {
+        flex-basis: 100%;
+        margin-top: 4px;
+    }
+}
+
+/* 매우 작은 화면 - 세로 배치 */
+@media (max-width: 200px) {
+    .copybot_input_row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+    
+    .copybot_input_row .copybot_input_group {
+        justify-content: center;
+    }
+    
+    #copybot_hide_execute, #copybot_unhide_execute {
+        width: 100%;
+        max-width: none;
+        margin-top: 4px;
+    }
+}
+
+/* 컨테이너 전체 오버플로우 방지 */
+.copybot_section {
+    overflow-x: hidden;
+    word-wrap: break-word;
+}
+
+/* 하이드 버튼 컨테이너 전용 스타일 */
+.copybot_hide_button_container {
+    display: flex;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.copybot_hide_button_container button {
+    flex: 1 1 auto;
+    min-width: 0;
 }
