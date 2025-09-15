@@ -5,7 +5,8 @@
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "User",
+    "settings": "settings.html",
+    "author": "User", 
     "version": "1.9.9",
     "homePage": "",
     "auto_update": false

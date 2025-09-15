@@ -331,6 +331,22 @@
     box-shadow: 0 2px 4px rgba(160, 174, 192, 0.3) !important;
 }
 
+/* 선택된 소메뉴 버튼 스타일 (미니멀 방식) */
+.copybot_settings_button.active {
+    color: #4299e1 !important;
+    font-weight: 700 !important;
+    background: #f7fafc !important;
+    border: 1px solid #4299e1 !important;
+    box-shadow: 0 1px 3px rgba(66, 153, 225, 0.2) !important;
+}
+
+.copybot_settings_button.active:hover {
+    background: #edf2f7 !important;
+    color: #3182ce !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 6px rgba(66, 153, 225, 0.3) !important;
+}
+
 /* 설정창 스타일 - 미니멀 화이트 디자인 */
 .copybot_settings_panel {
     margin-top: 8px;
@@ -761,6 +777,53 @@
 }
 
 /* 반응형 디자인 */
+/* 메시지 정리 섹션 버튼 텍스트 자동조절 - 안정적인 다중 fallback 방식 */
+#copybot_hide_execute, #copybot_unhide_execute {
+    /* 기본: 줄바꿈 방지 */
+    white-space: nowrap !important;
+    
+    /* 폰트 크기: 구형 브라우저용 fallback */
+    font-size: 12px !important; /* IE 등을 위한 기본값 */
+    font-size: calc(0.75em + 0.5vw) !important; /* 현대 브라우저용 자동조절 */
+    
+    /* 버튼 크기: 유연하면서도 안정적 */
+    width: auto !important;
+    min-width: 3.5em !important; /* em 기반으로 폰트 크기에 비례 */
+    max-width: 6em !important; /* 너무 커지지 않도록 제한 */
+    flex: 0 0 auto !important; /* flex 축소 방지 */
+    
+    /* 패딩: 폰트 크기에 비례하여 조절 */
+    padding: 0.5em 0.8em !important;
+    
+    /* 텍스트 중앙 정렬 */
+    text-align: center !important;
+}
+
+/* 화면 크기별 세부 조정 */
+@media (max-width: 480px) {
+    #copybot_hide_execute, #copybot_unhide_execute {
+        font-size: 11px !important; /* 작은 화면용 fallback */
+        font-size: calc(0.7em + 0.6vw) !important;
+        min-width: 3.2em !important;
+    }
+}
+
+@media (max-width: 360px) {
+    #copybot_hide_execute, #copybot_unhide_execute {
+        font-size: 10px !important; /* 매우 작은 화면용 fallback */
+        font-size: calc(0.65em + 0.8vw) !important;
+        min-width: 3em !important;
+        padding: 0.4em 0.6em !important;
+    }
+}
+
+@media (min-width: 1200px) {
+    #copybot_hide_execute, #copybot_unhide_execute {
+        font-size: 13px !important; /* 큰 화면용 최대 크기 */
+        font-size: calc(0.8em + 0.3vw) !important;
+    }
+}
+
 @media (max-width: 320px) {
     .copybot_input_row {
         flex-direction: row;
@@ -1086,9 +1149,6 @@
 
 /* 프리셋 아이콘 버튼 기본 스타일 */
 .copybot_icon_button {
-
-/* 프리셋 아이콘 버튼 기본 스타일 */
-.copybot_icon_button {
     font-size: 16px;          /* 아이콘 크기 */
     color: #a0aec0;            /* 기본 아이콘 색상 (연한 회색) */
     background: transparent;
@@ -1227,7 +1287,6 @@
 
 .copybot_reorder_buttons button:hover {
     background: #3182ce !important;
-}
 }
 
 .copybot_reorder_name {
