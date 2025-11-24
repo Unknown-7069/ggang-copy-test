@@ -68,6 +68,17 @@
         // 단순 명령어를 실행하는 범용 함수
         executeSimpleCommand: async function(command, successMessage, callback, isGhostwriting = false) {
             try {
+                // 삭제 명령어(/del) 실행 시 재확인 옵션 체크
+                if (command.trim().startsWith('/del')) {
+                    const isConfirmEnabled = $('#copybot_confirm_delete_toggle').attr('data-enabled') === 'true';
+                    if (isConfirmEnabled) {
+                        if (!confirm('ㄹㅇ삭제?')) {
+                            debugLog('삭제 명령 취소됨 (사용자 취소)');
+                            return; // 함수 종료 (명령어 실행 안 함)
+                        }
+                    }
+                }
+
                 debugLog(`깡갤 복사기: 실행 중인 명령어 - ${command}`);
                 const chatInput = $('#send_textarea');
                 if (chatInput.length > 0) {
@@ -191,10 +202,22 @@
                 debugLog(`깡갤 복사기: ${selector} 태그 제거 시작, 원본 길이:`, currentText.length);
 
                 let cleanedText = currentText;
-                let iterationCount = 0;
-                const maxIterations = 10;
-                
-                // HTML 태그 제거
+				let iterationCount = 0;
+				const maxIterations = 10;
+
+				// pic 이미지 프롬프트 태그 제거 (HTML 태그 제거 전에 먼저 처리)
+				if (/<pic\s+prompt="[^"]*"/i.test(cleanedText)) {
+					// 1. 여는 태그 제거 (<pic prompt="...">)
+					cleanedText = cleanedText.replace(/<pic\s+prompt="[^"]*"\s*\/?>/gi, '');
+					
+					// 2. 닫는 태그(</pic>) 및 속성 없는 태그(<pic>) 제거 (이게 먼저 실행되어야 </pic>가 pic> 로직에 의해 </ 로 깨지는 걸 막을 수 있음)
+					cleanedText = cleanedText.replace(/<\/?pic>/gi, '');
+					
+					// 3. 환각 찌꺼기 (pic>) 제거 (위에서 정상 태그들이 다 처리되고 남은 찌꺼기만 여기서 삭제됨)
+					cleanedText = cleanedText.replace(/pic>/gi, '');
+				}
+
+				// HTML 태그 제거
                 while (iterationCount < maxIterations) {
                     const previousText = cleanedText;
                     cleanedText = cleanedText.replace(/<([^>\/\s]+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g, '');

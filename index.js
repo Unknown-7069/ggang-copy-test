@@ -2,7 +2,7 @@
 // 깡갤 복사기 확장프로그램 - 모듈화된 아키텍처 시스템
 // ===================================================================
 // SillyTavern용 자동 메시지 복사 및 대필 도구
-//★릴리즈시 경로에서 -test를 제거하고 이름에서 '테스트'자 제거 필수! (참고: index.js, manifest.json, settings.html)
+//★확장 경로, 확장명 변경시 참고: index.js, manifest.json, settings.html (키워드: ggang-copy,복사기)
 //
 // === 🏗️ 모듈 구조 및 역할 ===
 //
@@ -165,7 +165,6 @@
     let isInitialized = false;
 	
     let isDebugMode = false;
-	//릴리즈시 -test지우기!
 	// utils.js 모듈 로드 함수
     async function loadUtilsModule() {
         return new Promise((resolve, reject) => {
@@ -301,7 +300,7 @@
 			document.head.appendChild(script);
 		});
 	}
-	//릴리즈시 여기까지 -test 지우고 밑에 하나 더 지우기
+
 	// ui.js 모듈 로드 함수
 	async function loadUIModule() {
 		return new Promise((resolve, reject) => {
@@ -1018,8 +1017,7 @@
         
         try {
             if ($("#extensions_settings2").length > 0) {
-            // 🔥 수정: settings.html 내용을 수동으로 DOM에 삽입
-			//릴리즈시 여기에있는거 -test지우기!
+            // settings.html 내용을 수동으로 DOM에 삽입
             try {
                 const response = await fetch('/scripts/extensions/third-party/ggang-copy-test/settings.html');
                 const htmlContent = await response.text();
