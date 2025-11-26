@@ -893,7 +893,8 @@
 						executeGhostwrite: executeGhostwrite,
 						removeTagsFromElement: () => window.CopyBotCommands?.removeTagsFromElement('#send_textarea'),
 						executeSimpleCommand: (cmd, msg, callback) => window.CopyBotCommands?.executeSimpleCommand(cmd, msg, callback),
-						triggerCacheBustRegeneration: () => window.CopyBotCommands?.triggerCacheBustRegeneration()
+						triggerCacheBustRegeneration: () => window.CopyBotCommands?.triggerCacheBustRegeneration(),
+						smartDeleteAndRegenerate: () => window.CopyBotCommands?.smartDeleteAndRegenerate()
 					}
 				});
 			}

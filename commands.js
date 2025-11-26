@@ -143,7 +143,9 @@
                 const chat = context.chat;
 
                 if (!chat || chat.length === 0) {
-                    toastr.error('대화 기록이 없어 재생성할 수 없습니다.');
+                    // 대화 기록이 없는 경우: 단순 재생성 (nonce 우회 방식 미적용)
+                    debugLog('깡갤 복사기: 대화 기록 없음 - 단순 재생성 실행');
+                    this.executeSimpleCommand('/trigger', '');
                     return;
                 }
 
@@ -263,6 +265,29 @@
             } catch (error) {
                 console.error('깡갤 복사기: 태그 제거 실패', error);
                 toastr.error('태그 제거 중 오류가 발생했습니다.');
+            }
+        },
+
+        // 스마트 삭제 후 재생성 함수 (채팅 유무에 따라 분기)
+        smartDeleteAndRegenerate: function() {
+            try {
+                const context = window.SillyTavern.getContext();
+                const chat = context.chat;
+                
+                if (!chat || chat.length === 0) {
+                    // 채팅 0개: 삭제 생략, 재생성만 실행
+                    debugLog('깡갤 복사기: 채팅 없음 - 삭제 생략, 재생성만 실행');
+                    this.triggerCacheBustRegeneration();
+                } else {
+                    // 채팅 있음: 삭제 후 재생성
+                    debugLog('깡갤 복사기: 채팅 있음 - 삭제 후 재생성 실행');
+                    this.executeSimpleCommand('/del 1', '', () => {
+                        this.triggerCacheBustRegeneration();
+                    });
+                }
+            } catch (error) {
+                console.error('깡갤 복사기: 스마트 삭제 후 재생성 실패', error);
+                toastr.error('재생성 중 오류가 발생했습니다.');
             }
         },
 
