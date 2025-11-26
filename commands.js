@@ -158,7 +158,9 @@
                 }
 
                 if (lastUserMessageIndex === -1) {
-                    toastr.error('마지막 사용자 메시지를 찾을 수 없어 재생성할 수 없습니다.');
+                    // 유저 메시지가 없는 경우: nonce 없이 단순 재생성
+                    debugLog('깡갤 복사기: 유저 메시지 없음 - 단순 재생성 실행(nonce 캐시 우회 미적용)');
+                    this.executeSimpleCommand('/trigger', '');
                     return;
                 }
 
