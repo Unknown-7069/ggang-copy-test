@@ -793,7 +793,7 @@
                     toastr.info('대필 요청이 중단되었습니다.');
                 } else {
                     console.error('깡갤 복사기: 대필 실행 중 최종 오류', error);
-                    toastr.error('대필에 최종적으로 실패했습니다. 콘솔을 확인해주세요.');
+                    toastr.error('대필에 최종적으로 실패했습니다.');
                 }
             } finally {
                 if (profileChangeAttempted && originalProfile) {
