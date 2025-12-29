@@ -47,7 +47,7 @@
 						accessInputIcon: $('#copybot_quickmenu_input_icon').is(':checked'),
 						inputIconPosition: $('#copybot_quickmenu_icon_position').val() || 'bottom_left',
 						wandIconClass: $('#copybot_quickmenu_wand_icon_picker').data('icon') || 'fa-clipboard',
-						inputIconClass: $('#copybot_quickmenu_input_icon_picker').data('icon') || 'fa-copy',
+						inputIconClass: $('#copybot_quickmenu_input_icon_picker').data('icon') || 'fa-clipboard',
 						sections: {
 							jump: $('#copybot_qm_section_jump').is(':checked'),
 							write: $('#copybot_qm_section_write').is(':checked'),
