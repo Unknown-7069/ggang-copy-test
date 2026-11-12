@@ -3,22 +3,78 @@
 (function () {
     'use strict';
     const KEY = 'copybot_persona_created';
-    const modes = ['oldest', 'newest'];
+    const modes = ['oldest', 'newest', 'modified_oldest', 'modified_newest'];
     let enabled = false, mode = '', api = null, select = null, options = [], revision = 0;
+    const dates = new Map();
+    let pending = null, controller = null;
+    let uploadInput = null, subscriptions = [];
+
+    function invalidate(value) {
+        if (!enabled) return;
+        const id = typeof value === 'string' ? value : value?.avatarId;
+        if (id) dates.delete(id);
+    }
+
+    function onUpload() { invalidate(document.getElementById('avatar_upload_overwrite')?.value); }
 
     function creationTime(id) {
-        // 실리 기본 업로드 파일명 = Date.now() + .png. 임의 이름/초 단위 숫자는 추측하지 않습니다.
-        const match = /^(\d{13})\.(?:png|jpe?g|webp|gif)$/i.exec(String(id));
-        const time = match ? Number(match[1]) : NaN;
-        return time >= Date.UTC(2000, 0, 1) && time <= Date.now() ? time : null;
+        return dates.get(id)?.created ?? null;
+    }
+
+    function modifiedTime(id) { return dates.get(id)?.modified ?? null; }
+
+    // 생성순은 addedTimestamp, 수정순은 mtime을 사용합니다. 파일명이나 서로의 날짜로 추측하지 않습니다.
+    // 정렬 선택 또는 네이티브 목록 갱신 때 누락분만 읽습니다. OFF는 요청을 취소하고 캐시를 비웁니다.
+    function refresh(ids) {
+        if (!enabled || !mode) return Promise.resolve();
+        if (pending) return pending;
+        const token = revision;
+        const abort = new AbortController();
+        controller = abort;
+        const task = (async () => {
+            const all = ids || await api.getUserAvatars(false);
+            if (token !== revision || !enabled || !mode) return;
+            const missing = all.filter(id => !dates.has(id));
+            for (let offset = 0; offset < missing.length; offset += 20) {
+                if (token !== revision || !enabled || !mode) return;
+                const batch = missing.slice(offset, offset + 20);
+                const response = await fetch('/api/image-metadata', {
+                    method: 'POST', headers: window.SillyTavern.getContext().getRequestHeaders(), signal: abort.signal,
+                    body: JSON.stringify({ paths: batch.map(id => 'User Avatars/' + id), type: 'persona' }),
+                });
+                if (!response.ok) throw new Error('File metadata API: ' + response.status);
+                const values = await response.json();
+                if (token !== revision || !enabled) return;
+                for (const id of batch) {
+                    const info = values?.['User Avatars/' + id];
+                    const valid = time => typeof time === 'number' && Number.isFinite(time) && time > 0 ? time : null;
+                    dates.set(id, { created: valid(info?.addedTimestamp), modified: valid(info?.mtime) });
+                }
+            }
+            if (token === revision && enabled && mode) await api.getUserAvatars();
+        })().catch(async error => {
+            if (token !== revision || error.name === 'AbortError') return;
+            mode = '';
+            if (select) select.value = window.SillyTavern.getContext().powerUserSettings.persona_sort_order || 'asc';
+            window.toastr?.warning('페르소나 파일의 날짜 정보를 불러오지 못했습니다. 기존 정렬을 사용합니다.');
+            window.CopyBotSettings?.saveSettings();
+            window.CopyBotUtils?.debugLog(window.copybot_debug_mode, error.message);
+            try { await api.getUserAvatars(); } catch (_) { /* 기존 목록 유지 */ }
+        }).finally(() => {
+            if (pending === task) pending = null;
+            if (controller === abort) controller = null;
+        });
+        pending = task;
+        return task;
     }
 
     function ordered(ids, direction, names = {}) {
         return [...ids].sort((a, b) => {
-            const ta = creationTime(a), tb = creationTime(b);
+            const readTime = direction.startsWith('modified_') ? modifiedTime : creationTime;
+            const ta = readTime(a), tb = readTime(b);
             if (ta === null && tb !== null) return 1;
             if (tb === null && ta !== null) return -1;
-            if (ta !== null && tb !== null && ta !== tb) return (ta - tb) * (direction === 'newest' ? -1 : 1);
+            if (ta !== null && tb !== null && ta !== tb) return (ta - tb) * (direction.endsWith('newest') ? -1 : 1);
             return String(names[a] || a).localeCompare(String(names[b] || b)) || String(a).localeCompare(String(b));
         });
     }
@@ -26,6 +82,7 @@
     function filter(data) {
         if (!enabled || !select?.isConnected) return data;
         if (!modes.includes(mode) || !Array.isArray(data)) return data;
+        if (data.some(id => !dates.has(id))) refresh(data);
         const option = options.find(item => item.dataset.copybotCreated === mode);
         if (!option) return data;
         const optionValue = option.value;
@@ -54,7 +111,7 @@
         if (mode) {
             // 우리가 추가한 항목만 처리합니다. 실리 설정에 모르는 정렬 값을 저장하지 않습니다.
             event.stopImmediatePropagation();
-            api.getUserAvatars().catch(() => window.toastr?.warning('페르소나 목록을 불러오지 못했습니다.'));
+            refresh();
         }
     }
 
@@ -62,6 +119,10 @@
         const selectedOurs = !!select?.selectedOptions[0]?.dataset.copybotCreated;
         if (api?.personasFilter?.filterFunctions[KEY] === filter) delete api.personasFilter.filterFunctions[KEY];
         select?.removeEventListener('input', onInput, true);
+        uploadInput?.removeEventListener('change', onUpload, true);
+        uploadInput = null;
+        subscriptions.forEach(([source, type]) => source.removeListener(type, invalidate));
+        subscriptions = [];
         options.forEach(option => option.remove());
         options = [];
         if (select && (selectedOurs || select.selectedIndex < 0)) {
@@ -72,12 +133,16 @@
 
     async function configure(value, savedMode = mode) {
         const token = ++revision;
+        controller?.abort();
+        controller = null;
+        pending = null;
         const wasActive = enabled && modes.includes(mode);
         enabled = value === true;
         mode = modes.includes(savedMode) ? savedMode : '';
         detach();
         try {
             if (!enabled) {
+                dates.clear();
                 if (wasActive && api) await api.getUserAvatars();
                 return;
             }
@@ -90,7 +155,7 @@
             }
             api = loaded;
             select = target;
-            for (const [direction, label] of [['oldest', '과거순'], ['newest', '최신순']]) {
+            for (const [direction, label] of [['oldest', '과거순'], ['newest', '최신순'], ['modified_oldest', '수정 오래된순'], ['modified_newest', '수정 최신순']]) {
                 const option = document.createElement('option');
                 option.value = KEY + '_' + direction;
                 option.dataset.copybotCreated = direction;
@@ -100,7 +165,18 @@
             }
             api.personasFilter.filterFunctions[KEY] = filter;
             select.addEventListener('input', onInput, true);
-            if (mode) await api.getUserAvatars();
+            uploadInput = document.getElementById('avatar_upload_file');
+            uploadInput?.addEventListener('change', onUpload, true);
+            const context = window.SillyTavern.getContext();
+            if (context.eventSource?.on && context.eventSource?.removeListener) {
+                for (const key of ['PERSONA_CREATED', 'PERSONA_UPDATED', 'PERSONA_DELETED']) {
+                    const type = context.eventTypes?.[key];
+                    if (!type) continue;
+                    context.eventSource.on(type, invalidate);
+                    subscriptions.push([context.eventSource, type]);
+                }
+            }
+            if (mode) await refresh();
         } catch (error) {
             if (token !== revision) return;
             detach();
@@ -109,5 +185,5 @@
         }
     }
 
-    window.CopyBotPersonaSort = { configure, getMode: () => mode, creationTime, ordered };
+    window.CopyBotPersonaSort = { configure, getMode: () => mode, creationTime, modifiedTime, ordered };
 })();
