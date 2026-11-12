@@ -90,7 +90,7 @@
             }
             api = loaded;
             select = target;
-            for (const [direction, label] of [['oldest', '생성 오래된순'], ['newest', '생성 최신순']]) {
+            for (const [direction, label] of [['oldest', '과거순'], ['newest', '최신순']]) {
                 const option = document.createElement('option');
                 option.value = KEY + '_' + direction;
                 option.dataset.copybotCreated = direction;
