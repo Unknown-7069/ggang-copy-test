@@ -27,7 +27,9 @@
     
     // 모듈 전역 변수
     let isDebugMode = false;
-    
+    // 태그 제거 되돌리기용: 가장 최근 태그 제거의 적용 전 원문 { el, text } (알림을 눌러 1회 되돌림)
+    let lastTagRemove = null;
+
     // 디버그 로그 함수 (utils 모듈 사용)
     function debugLog(...args) {
         if (window.CopyBotUtils) {
@@ -48,7 +50,74 @@
             window.CopyBotUtils.escapeHtml(str) :
             (typeof str === 'string' ? str : '');
     }
-    
+
+    // ===== 데우스(DEUS EX MACHINA) 프롬프트 대응 — 태그 제거 전처리 =====
+    // 데우스는 본문·지문을 <prose>…</prose> 로 감싼다. 태그 제거의 "짝 태그는 안의 내용까지 통째 삭제"(상태창용)에 본문이 함께 사라지던 것을 막는다.
+    // 데우스 고유 태그가 있는 글에서만(DEUS_GATE) 아래 전처리를 먼저 돌리고, 그 뒤는 기존 순서를 그대로 태운다.
+    // 게이트가 거짓이면 호출조차 하지 않으므로 다른 프롬프트의 결과는 한 글자도 달라지지 않는다.
+    // 근거·경우의 수: 연구노트/2026-10-12-데우스-태그제거-분석.md / 검사: tools-node-test/deus_strip_test.js
+    const DEUS_GATE = /<\/?prose(?=[\s>])|<scene_plan(?=[\s>])|<scene_reasoning(?=[\s>])|<true_thoughts(?=[\s>])|<momentum_route(?=[\s>\/])/i;
+
+    // 통째로 지우는 블록(안의 글 포함). 같은 이름의 여는 태그는 건너뛰지 않는다 → 닫는 태그가 빠진 블록이 다음 메시지의 블록·본문까지 삼키지 않는다.
+    // tail: 본문 안에 끼는 블록(숨은 속마음·연출)은 뒤 공백과 줄바꿈 하나까지 걷어 빈 줄을 남기지 않는다. 본문 밖 블록은 메시지 사이 빈 줄을 지키려고 그대로 둔다.
+    const deusBlock = (name, tail) => new RegExp(String.raw`<${name}(?=[\s>])[^>]*>(?:(?!<${name}(?=[\s>]))[\s\S])*?<\/${name}\s*>${tail}`, 'gi');
+    const DEUS_BLOCKS = [
+        ...['scene_plan', 'scene_reasoning', 'think', 'tracker', 'cyoa', 'status', 'threads', 'plotlines', 'psych', 'momentum', 'conflict', 'momentum_route', 'style'].map(n => deusBlock(n, '')),
+        ...['true_thoughts', 'visuals'].map(n => deusBlock(n, String.raw`[ \t]*\n?`)),
+    ];
+    // 닫는 태그 없이 끊긴 블록(생성이 중간에 잘린 응답). 뒤따르는 다른 메시지를 건드리지 않게 좁게 지운다:
+    // 트래커·속마음은 그 줄 끝까지, 꼬리 블록은 그 문단 끝(빈 줄 전)까지(모멘텀은 바로 다음 "Potential developments" 문단까지)
+    const DEUS_OPEN_LINE = /<(?:tracker|true_thoughts)(?=[\s>])[^>]*>[^\n]*/gi;
+    const DEUS_OPEN_FOOTER = /<(?:cyoa|status|threads|plotlines|psych|momentum|conflict)(?=[\s>])[^>]*>(?:(?!\n[ \t]*\n)[\s\S])*(?:(?:\n[ \t]*)+\n[ \t]*(?:\*\*|__)?Potential developments?(?:\*\*|__)?[ \t]*:(?:(?!\n[ \t]*\n)[\s\S])*)?/gi;
+    // 태그만 벗기고 안의 글은 남기는 것: 본문 껍데기, 표현 대사 태그(대사 색 span/font 는 기존 인라인 단계가 벗긴다)
+    const DEUS_PROSE_TAG = /<\/?prose(?=[\s>])[^>]*>/gi;
+    const DEUS_EXPRESSIVE = /<\/?(?:shout|quiet|angry|excited|dizzy|crying|anxious|hurt|intoxicated|whispering|trembling|deadpan|allcaps|uppercase|nocaps|lowercase|titlecase|tiny|small|large|huge|spaced|wide|tight|bold|italic|mono|gradient|rainbow|red|orange|yellow|green|cyan|blue|purple|pink|white|gray|bright|dim|faded|glow|warm|cool)(?=[\s>])[^>]*>/gi;
+    // 대사 앞에 색 코드만 글자로 붙은 것(#89b4fa "대사")
+    const DEUS_BARE_HEX = /(^|\s)#[0-9a-f]{6}[ \t]*(?=["“]|<(?:span|font)[\s>])/gim;
+    // 프리셋 경고 문단: 제목 문단 + 빈 줄 건너 이어지는 경고 항목·맺음말 문단
+    const DEUS_WARNING = /[ \t]*(?:⚠️?[ \t]*)?(?:\*\*|__)?PRESET (?:CONFIGURATION|PARSING) ERROR:(?:(?!\n[ \t]*\n)[\s\S])*(?:(?:\n[ \t]*)+\n[ \t]*(?:[-*•][ \t]+(?:@[A-Za-z]|! |1st-person |Sheet XML |Story XML |An XML closer|NSFW selection|Tension |Narrative Styles checkpoint)|Restore the named module)(?:(?!\n[ \t]*\n)[\s\S])*)*/g;
+    // 구분선 한 줄(데우스가 화면·프롬프트에서 스스로 지우는 줄)
+    const DEUS_RULE_LINE = /^---[ \t]*$\n?/gm;
+    // 태그 없이 남은 계획 줄("- Context: …" 묶음). 기준 줄이 든 2줄 이상 연속 묶음만 지운다 → 본문에 우연히 낀 한 줄은 지키고, 씬플랜을 안 쓰는 글에는 닿지 않는다
+    const DEUS_PLAN_LABELS = String.raw`CYOA|Context|OOC|Knowledge|Fandom Canon Check|Momentum Engine Apply|Momentum Engine Routes|Anti-Positivity Bias|Anti-Character Omniscience|Character Realism|Erotic potential|Erotic state|Smut guidance|Smut|Story progression|Prose Length|Prose Plan|Prose Formatting\/Narrative Mode|Language|Narrative Style|World Building|Combat Writing|Narration|Dialogue Color|Dialogue|Tracker|Improve [^:\n]{1,60} Input|Anti-Repetition|Visual Storytelling|Expressive Dialogue|True Thoughts|Status|Plotlines|Psychological States|Response Structure`;
+    const deusPlanLine = (labels) => new RegExp(String.raw`^[ \t]*(?:(?:[-*•·]|\d+[.)])[ \t]*)?(?:\*\*|__)?@?(?:${labels})(?:\*\*|__)?[ \t]*:`, 'i');
+    const DEUS_PLAN_LINE = deusPlanLine(DEUS_PLAN_LABELS);
+    const DEUS_PLAN_ANCHOR = deusPlanLine(String.raw`Context|Story progression|Prose Plan|Prose Formatting\/Narrative Mode|Response Structure`);
+    const DEUS_PLAN_NOTE = /^[ \t]*\([^\n]*\)[ \t]*$/;          // 계획 줄 사이에 낀 괄호 안내 줄(프리셋 틀에 있는 줄)
+    const DEUS_PLAN_END = /^[ \t]*Let['’]?s write\.?[ \t]*$/i;   // 계획 끝 맺음 줄
+
+    function stripDeusPlanLines(text) {
+        const lines = text.split('\n');
+        const kept = [];
+        for (let i = 0; i < lines.length;) {
+            if (!DEUS_PLAN_LINE.test(lines[i])) { kept.push(lines[i++]); continue; }
+            let j = i, count = 0, anchored = false;
+            while (j < lines.length) {
+                if (DEUS_PLAN_LINE.test(lines[j])) { count++; if (DEUS_PLAN_ANCHOR.test(lines[j])) anchored = true; j++; continue; }
+                if (DEUS_PLAN_NOTE.test(lines[j]) && j + 1 < lines.length && DEUS_PLAN_LINE.test(lines[j + 1])) { j++; continue; }
+                break;
+            }
+            if (anchored && count >= 2) {
+                if (j < lines.length && DEUS_PLAN_END.test(lines[j])) j++;
+                i = j;
+            } else {
+                while (i < j) kept.push(lines[i++]);
+            }
+        }
+        return kept.join('\n');
+    }
+
+    // 순수 함수(문자열 → 문자열). 여기서 남긴 것은 뒤의 기존 태그 제거 단계가 이어서 정리한다.
+    function deusPreClean(input) {
+        let text = String(input).replace(/\r\n?/g, '\n');
+        for (const rx of DEUS_BLOCKS) text = text.replace(rx, '');                                         // ① 닫힌 블록 통째로
+        text = stripDeusPlanLines(text);                                                                  // ② 태그 없이 남은 계획 줄
+        text = text.replace(DEUS_OPEN_LINE, '').replace(DEUS_OPEN_FOOTER, '');                             // ③ 끊긴 블록
+        text = text.replace(DEUS_PROSE_TAG, '').replace(DEUS_EXPRESSIVE, '');                              // ④ 껍데기만 벗기기(본문·대사 유지)
+        text = text.replace(DEUS_BARE_HEX, '$1').replace(DEUS_WARNING, '').replace(DEUS_RULE_LINE, '');    // ⑤ 데우스 찌꺼기
+        return text;
+    }
+
     window.CopyBotCommands = {
         
         // 모듈 초기화 함수
@@ -65,127 +134,285 @@
             debugLog('CopyBotCommands: 디버그 모드 변경됨:', enabled);
         },
         
-        // 단순 명령어를 실행하는 범용 함수
-        executeSimpleCommand: async function(command, successMessage, callback, isGhostwriting = false) {
+        // ===== 확장 업데이트 (실리 확장 관리 창을 열지 않고 복사기 안에서) — 실리 /api/extensions/version·update 사용 =====
+        _extName: function() { return window.copybot_extension_folder || 'ggang-copy'; },
+        _extHeaders: function() {
+            const ctx = window.SillyTavern?.getContext?.();
+            return (ctx && typeof ctx.getRequestHeaders === 'function') ? ctx.getRequestHeaders() : { 'Content-Type': 'application/json' };
+        },
+        _setUpdateStatus: function(text, color) { $('#copybot_update_status').text(text || '').css('color', color || ''); },
+        // 기타 탭을 열 때 1회: manifest 의 현재 버전 표시
+        showExtensionVersion: async function() {
+            const $v = $('#copybot_update_version');
+            if (!$v.length || $v.data('loaded')) return;
             try {
-                // 삭제 명령어(/del) 실행 시 재확인 옵션 체크
-                if (command.trim().startsWith('/del')) {
-                    const isConfirmEnabled = $('#copybot_confirm_delete_toggle').attr('data-enabled') === 'true';
-                    if (isConfirmEnabled) {
-                        if (!confirm('ㄹㅇ삭제?')) {
-                            debugLog('삭제 명령 취소됨 (사용자 취소)');
-                            return; // 함수 종료 (명령어 실행 안 함)
-                        }
-                    }
-                }
-
-                debugLog(`깡갤 복사기: 실행 중인 명령어 - ${command}`);
-                const chatInput = $('#send_textarea');
-                if (chatInput.length > 0) {
-                    const originalText = chatInput.val();
-                    chatInput.val(command);
-                    chatInput.trigger('input');
-                    setTimeout(() => {
-                        $('#send_but').click();
-                        setTimeout(() => {
-                            if (!isGhostwriting) {
-                                chatInput.val(originalText || '');
-                            } else {
-                                chatInput.val(''); 
-                            }
-                            if (typeof callback === 'function') {
-                                callback();
-                            }
-                        }, 500);
-                    }, 100);
-                    if (successMessage) {
-                        toastr.success(successMessage);
-                    }
-                } else {
-                    toastr.error('채팅 입력창을 찾을 수 없습니다.');
-                    console.error('깡갤 복사기: #send_textarea 요소를 찾을 수 없음');
-                }
+                const r = await fetch(`/scripts/extensions/third-party/${this._extName()}/manifest.json`, { cache: 'no-store' });
+                const m = r.ok ? await r.json() : null;
+                $v.text(m?.version ? `v${m.version}` : '').data('loaded', true);
+            } catch (e) { debugLog('manifest 읽기 실패', e); }
+        },
+        // 유저(로컬) 확장 → 없으면 전역 확장 순으로 조회. 깃허브로 설치한 경우에만 서버가 안다
+        _queryExtensionVersion: async function() {
+            for (const global of [false, true]) {
+                const r = await fetch('/api/extensions/version', { method: 'POST', headers: this._extHeaders(), body: JSON.stringify({ extensionName: this._extName(), global }) });
+                if (r.ok) return { global, data: await r.json() };
+                if (r.status !== 404) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`);
+            }
+            throw new Error('설치 정보를 찾지 못했습니다 (깃허브에서 설치한 복사기에서만 동작합니다)');
+        },
+        checkExtensionUpdate: async function() {
+            this._setUpdateStatus('확인 중…');
+            try {
+                const { data } = await this._queryExtensionVersion();
+                const where = `${data.currentBranchName || ''} ${String(data.currentCommitHash || '').slice(0, 7)}`.trim();
+                if (data.isUpToDate) this._setUpdateStatus(`최신입니다 (${where})`, '#48bb78');
+                else this._setUpdateStatus(`새 버전이 있습니다 (지금 ${where}) — [업데이트]를 눌러 주십시오`, '#e8a838');
+                return data;
             } catch (error) {
-                console.error('깡갤 복사기 명령어 실행 오류:', error);
-                toastr.error('명령어 실행 중 오류가 발생했습니다.');
+                console.error('깡갤 복사기: 업데이트 확인 실패', error);
+                this._setUpdateStatus(`확인 실패: ${error.message}`, '#e53e3e');
+                return null;
+            }
+        },
+        updateExtension: async function() {
+            this._setUpdateStatus('업데이트 중…');
+            try {
+                const { global } = await this._queryExtensionVersion();
+                const r = await fetch('/api/extensions/update', { method: 'POST', headers: this._extHeaders(), body: JSON.stringify({ extensionName: this._extName(), global }) });
+                if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`);
+                const data = await r.json().catch(() => ({}));
+                if (data.isUpToDate) {
+                    this._setUpdateStatus('이미 최신입니다', '#48bb78');
+                    toastr.info('깡갤 복사기는 이미 최신입니다.');
+                    return data;
+                }
+                this._setUpdateStatus(`업데이트 완료 (${data.shortCommitHash || ''}) — 새로고침하면 적용됩니다`, '#48bb78');
+                if (confirm('업데이트했습니다. 지금 새로고침하시겠습니까? (입력 중인 글은 사라질 수 있습니다)')) location.reload();
+                return data;
+            } catch (error) {
+                console.error('깡갤 복사기: 업데이트 실패', error);
+                this._setUpdateStatus(`업데이트 실패: ${error.message}`, '#e53e3e');
+                toastr.error('업데이트에 실패했습니다. 확장 관리 창에서 다시 시도해 보십시오.');
+                return null;
             }
         },
 
-        // 메시지 복사 명령 실행 함수
+        // 단순 명령어 실행 (구 입력창 경유 API 의 호환 껍데기). 2026-10-09 유저 결정: 입력창(#send_textarea+#send_but) 경유 경로는 완전히 제거.
+        // 모든 명령은 executeSilentCommand(실리 내부 실행기)로만 간다. callback 은 실행이 끝난 뒤 호출. isGhostwriting 은 더 이상 쓰지 않음.
+        executeSimpleCommand: async function(command, successMessage, callback, isGhostwriting = false) {
+            const result = await this.executeSilentCommand(command, successMessage);
+            if (typeof callback === 'function' && !result?.cancelled && !result?.isError) {
+                try { callback(); } catch (error) { console.error('깡갤 복사기: 명령 후속 콜백 오류', error); }
+            }
+            return result;
+        },
+
+        // 슬래시 명령을 실리 내부 실행기로 직접 실행 (조용한 실행). 실리 1.12 이상 전제 — API 가 없으면 실행하지 않고 안내만.
+        executeSilentCommand: async function(command, successMessage, options = {}) {
+            try {
+                // 삭제가 포함된 명령은 어떤 경로든 좆됨방지(삭제 전 재확인) 옵션을 그대로 따른다.
+                // 맨 앞뿐 아니라 파이프(|) 뒤에 오는 삭제 명령, 실리의 다른 파괴 명령(/delname /delchat /delswipe), 대소문자 변형도 잡는다.
+                // 호출자가 이미 자체 확인창을 띄웠으면 options.skipConfirm 으로 중복 확인을 막는다. 설정을 못 읽으면 확인한다(fail-closed).
+                const trimmed = String(command || '').trim();
+                const DELETE_CMD = /(^|\|)\s*\/(del|cut|delname|delchat|delswipe)\b/i;
+                if (!options.skipConfirm && DELETE_CMD.test(trimmed)) {
+                    const isConfirmEnabled = window.CopyBotSettings?.isConfirmDeleteEnabled
+                        ? window.CopyBotSettings.isConfirmDeleteEnabled()
+                        : ($('#copybot_confirm_delete_toggle').attr('data-enabled') ?? 'true') === 'true';
+                    if (isConfirmEnabled && !confirm('ㄹㅇ삭제?')) {
+                        debugLog('삭제 명령 취소됨 (사용자 취소)');
+                        return { isError: false, cancelled: true };
+                    }
+                }
+                const context = window.SillyTavern?.getContext?.();
+                if (!context || typeof context.executeSlashCommandsWithOptions !== 'function') {
+                    toastr.error('실리태번 버전이 너무 낮습니다. 깡갤 복사기는 1.12 이상이 필요합니다.');
+                    console.error('깡갤 복사기: executeSlashCommandsWithOptions 없음 (실리 1.12 이상 필요)');
+                    return { isError: true, errorMessage: 'SillyTavern 1.12+ required' };
+                }
+                debugLog(`깡갤 복사기: 조용한 명령 실행 - ${command}`);
+                const result = await context.executeSlashCommandsWithOptions(command, {
+                    handleParserErrors: false,
+                    handleExecutionErrors: false,
+                });
+                if (result?.isError) {
+                    console.error('깡갤 복사기: 명령 실행 오류', result.errorMessage);
+                    toastr.error(`명령 실행 실패: ${result.errorMessage || command}`);
+                    return result;
+                }
+                if (successMessage) {
+                    toastr.success(successMessage);
+                }
+                return result;
+            } catch (error) {
+                console.error('깡갤 복사기 명령어 실행 오류:', error);
+                toastr.error('실행 중 오류가 발생했습니다.');
+                // 예외도 "실패"로 돌려줘야 호출자의 후속 콜백(삭제 후 재생성 등)이 실행되지 않음
+                return { isError: true, errorMessage: String(error?.message || error || '') };
+            }
+        },
+
+        // 메시지 번호로 이동 (index: 숫자 또는 'last')
+        jumpToMessage: async function(index, successMessage) {
+            try {
+                const lastIndex = getLastMessageIndex();
+                let target = index === 'last' ? lastIndex : parseInt(index, 10);
+                if (isNaN(target) || target < 0) {
+                    toastr.error('올바른 메시지 번호를 입력해야 합니다.');
+                    return;
+                }
+                if (target > lastIndex) {
+                    target = lastIndex;
+                }
+                // 실리 기본 /chat-jump: 안 그려진 과거 메시지 로드까지 처리해 줌
+                await this.executeSilentCommand(`/chat-jump ${target}`, successMessage);
+
+                // 안전장치: /chat-jump 내부의 smooth scrollTo는 content-visibility:auto(렌더 최적화 확장) 환경에서
+                // 스크롤이 전혀 안 움직이는 것을 폰 실환경에서 확인함 → 즉시 스크롤(scrollTop 직접 대입)로 보정.
+                // 레이아웃이 뒤늦게 바뀔 수 있어(이미지·지연 렌더) 잠깐 간격을 두고 최대 3번 다시 맞춤.
+                // (제자리여도 3번 다 확인한다 — 첫 확인 뒤 늦게 뜨는 이미지로 밀리는 경우를 잡으려는 폰 검증된 동작. 비용은 좌표 읽기 3번뿐)
+                const chat = document.querySelector('#chat');
+                const anchor = () => {
+                    const messageElement = document.querySelector(`#chat .mes[mesid="${target}"]`);
+                    if (!messageElement || !chat) return 'missing';
+                    const r = messageElement.getBoundingClientRect();
+                    const c = chat.getBoundingClientRect();
+                    const delta = r.top - c.top;
+                    if (Math.abs(delta) > 2) {
+                        chat.scrollTop = chat.scrollTop + delta;
+                        return 'moved';
+                    }
+                    return 'settled';
+                };
+                for (let i = 0; i < 3; i++) {
+                    if (anchor() === 'missing') break;
+                    await new Promise(resolve => setTimeout(resolve, 250));
+                }
+            } catch (error) {
+                console.error('깡갤 복사기: 메시지 이동 실패', error);
+                toastr.error('메시지 이동 중 오류가 발생했습니다.');
+            }
+        },
+
+        // 텍스트를 클립보드에 조용히 쓰는 헬퍼 (실패 시 execCommand fallback)
+        writeToClipboard: async function(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (error) {
+                debugLog('clipboard API 실패, execCommand fallback 시도', error);
+                try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.setAttribute('readonly', '');          // 모바일 키보드 팝업 방지
+                    textArea.setAttribute('inputmode', 'none');
+                    textArea.style.position = 'fixed';
+                    textArea.style.opacity = '0';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    const ok = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    return ok;
+                } catch (fallbackError) {
+                    console.error('깡갤 복사기: 클립보드 fallback 복사 실패', fallbackError);
+                    return false;
+                }
+            }
+        },
+
+        // 메시지 복사 명령 실행 함수 (실리 기본 /messages 만 사용, 외부 확장 불필요)
+        // 채팅 입력창/전송 버튼을 거치지 않고 슬래시 명령을 직접 실행 → 화면(스크롤·펼침·입력창)을 건드리지 않음
         executeCopyCommand: async function(start, end) {
             try {
-                const command = `/messages names=off ${start}-${end} | /copy`;
-                this.executeSimpleCommand(command, `메시지 ${start}-${end} 복사 명령 실행!`);
-                setTimeout(async () => {
-                    try {
-                        const clipboardText = await navigator.clipboard.readText();
-                        if (clipboardText && clipboardText.trim()) {
-                            $('#copybot_textbox').val(clipboardText);
-                            // input 이벤트를 강제로 발생시켜 모든 버튼 상태를 올바르게 업데이트합니다.
-                            $('#copybot_textbox').trigger('input');
-                            debugLog('텍스트박스에 내용 표시 완료');
-                        }
-                    } catch (error) {
-                        debugLog('클립보드 읽기 실패 (권한 문제일 수 있음)', error);
+                const context = window.SillyTavern?.getContext?.();
+                if (!context || typeof context.executeSlashCommandsWithOptions !== 'function') {
+                    toastr.error('이 기능은 SillyTavern 1.12 이상이 필요합니다. 실리를 업데이트해 주십시오.');
+                    return;
+                }
+
+                // 숨긴 메시지 포함 옵션 (기본 OFF). hidden 인자를 생략하면 /hide 로 숨긴 메시지는 결과에서 빠짐 (ST 1.19 확인)
+                const includeHidden = $('#copybot_copy_include_hidden').is(':checked');
+                // 번호는 정수로만 명령에 넣는다 (입력값을 그대로 명령 문자열에 끼워 넣지 않음)
+                const s0 = parseInt(start, 10);
+                let e0 = parseInt(end, 10);
+                if (isNaN(s0) || isNaN(e0) || s0 < 0 || s0 > e0) {
+                    toastr.error('올바른 메시지 범위를 숫자로 입력해야 합니다.');
+                    return;
+                }
+                // 마지막 번호를 넘는 범위: 시작이 넘으면 오류, 끝만 넘으면 마지막 번호로 자르고 알린다
+                if (Array.isArray(context.chat)) {
+                    const lastIndex = context.chat.length - 1;
+                    if (lastIndex < 0) {
+                        toastr.warning('복사할 메시지가 없습니다.');
+                        return;
                     }
-                }, 2000);
+                    if (s0 > lastIndex) {
+                        toastr.error(`시작 번호가 마지막 메시지 번호(${lastIndex})보다 큽니다.`);
+                        return;
+                    }
+                    if (e0 > lastIndex) {
+                        toastr.info(`끝 번호가 마지막 메시지 번호를 넘어 ${lastIndex}번까지만 복사합니다.`, '', { timeOut: 2500 });
+                        e0 = lastIndex;
+                    }
+                }
+                start = s0; end = e0;
+                const command = `/messages names=off hidden=${includeHidden ? 'on' : 'off'} ${start}-${end}`;
+                debugLog(`깡갤 복사기: 조용한 복사 실행 - ${command}`);
+                const result = await context.executeSlashCommandsWithOptions(command, {
+                    handleParserErrors: false,
+                    handleExecutionErrors: false,
+                });
+                const text = (result?.pipe ?? '').toString();
+
+                if (!text.trim()) {
+                    const s = Math.max(0, parseInt(start, 10) || 0);
+                    const e = parseInt(end, 10);
+                    const hiddenInRange = (context.chat || []).slice(s, (isNaN(e) ? s : e) + 1).some(m => m?.is_system);
+                    if (!includeHidden && hiddenInRange) {
+                        toastr.warning(`${start}~${end}번은 숨긴 메시지뿐입니다. 복사 옆 '숨긴 메시지 포함'을 켜면 복사됩니다.`, '', { timeOut: 5000 });
+                    } else {
+                        toastr.warning(`${start}~${end}번 범위에 복사할 내용이 없습니다.`);
+                    }
+                    return;
+                }
+
+                $('#copybot_textbox').val(text);
+                // input 이벤트를 강제로 발생시켜 모든 버튼 상태를 올바르게 업데이트합니다.
+                $('#copybot_textbox').trigger('input');
+                debugLog('텍스트박스에 내용 표시 완료');
+
+                const copied = await this.writeToClipboard(text);
+                if (!copied) {
+                    toastr.warning('텍스트박스에는 넣었지만 클립보드 복사는 실패했습니다. 위 "복사" 버튼을 눌러 주십시오.');
+                }
             } catch (error) {
                 console.error('깡갤 복사기 오류:', error);
                 toastr.error('메시지 복사 중 오류가 발생했습니다.');
             }
         },
 
-        // 캐시 우회를 위한 새로운 재생성 함수 (토스트 메시지 제거)
+        // 재생성 (generation.js 파이프라인으로 위임) — 하위 호환용 이름 유지
         triggerCacheBustRegeneration: function() {
-            debugLog('깡갤 복사기: 캐시 우회 재생성 시작...');
-            try {
-                const context = window.SillyTavern.getContext();
-                const chat = context.chat;
-
-                if (!chat || chat.length === 0) {
-                    // 대화 기록이 없는 경우: 단순 재생성 (nonce 우회 방식 미적용)
-                    debugLog('깡갤 복사기: 대화 기록 없음 - 단순 재생성 실행');
-                    this.executeSimpleCommand('/trigger', '');
-                    return;
-                }
-
-                let lastUserMessageIndex = -1;
-                let originalMessage = '';
-                for (let i = chat.length - 1; i >= 0; i--) {
-                    if (chat[i].is_user) {
-                        lastUserMessageIndex = i;
-                        originalMessage = chat[i].mes;
-                        break;
-                    }
-                }
-
-                if (lastUserMessageIndex === -1) {
-                    // 유저 메시지가 없는 경우: nonce 없이 단순 재생성
-                    debugLog('깡갤 복사기: 유저 메시지 없음 - 단순 재생성 실행(nonce 캐시 우회 미적용)');
-                    this.executeSimpleCommand('/trigger', '');
-                    return;
-                }
-
-                const nonce = `<!-- regen-id:${Date.now()}-${Math.random()} -->`;
-                
-                chat[lastUserMessageIndex].mes = `${originalMessage}\n${nonce}`;
-                debugLog('깡갤 복사기: Nonce가 추가된 임시 메시지로 재생성 요청');
-
-                // 토스트 메시지 제거됨 (중복 방지)
-                this.executeSimpleCommand('/trigger', '', () => {
-                    setTimeout(() => {
-                        const currentChat = window.SillyTavern.getContext().chat;
-                        if (currentChat[lastUserMessageIndex] && currentChat[lastUserMessageIndex].mes.includes(nonce)) {
-                            currentChat[lastUserMessageIndex].mes = originalMessage;
-                            debugLog('깡갤 복사기: 마지막 사용자 메시지를 성공적으로 원상복구했습니다.');
-                        }
-                    }, 1000);
-                });
-
-            } catch (error) {
-                console.error('깡갤 복사기: 캐시 우회 재생성 중 오류 발생', error);
-                toastr.error('캐시 우회 재생성 중 오류가 발생했습니다. 콘솔을 확인해주세요.');
+            if (window.CopyBotGeneration) {
+                return window.CopyBotGeneration.deleteAndRegenerate();
             }
+            return this.legacyTriggerCacheBustRegeneration();
+        },
+
+        // 삭제 후 재생성 (generation.js 파이프라인으로 위임) — 하위 호환용 이름 유지
+        smartDeleteAndRegenerate: function() {
+            if (window.CopyBotGeneration) {
+                return window.CopyBotGeneration.deleteAndRegenerate();
+            }
+            return this.legacySmartDeleteAndRegenerate();
+        },
+
+        // (구) 재생성 폴백 — generation.js 가 없을 때. 예전엔 채팅 메시지 본문에 nonce 를 직접 써넣고 /trigger 를 돌렸는데,
+        // 생성이 길어지거나 실패하면 nonce 가 채팅 파일에 남을 수 있어(유저 데이터 변경) 2026-10-09 제거. 안내만 한다.
+        legacyTriggerCacheBustRegeneration: function() {
+            console.error('깡갤 복사기: 재생성 모듈(generation.js)이 없어 재생성을 실행할 수 없습니다.');
+            toastr.error('재생성 모듈이 로드되지 않았습니다. 페이지를 새로고침해 주십시오.');
+            return false;
         },
 
         // 특정 element에서 태그를 제거하는 범용 함수 ({{ }} 템플릿 구문 제거 기능 추가)
@@ -221,7 +448,17 @@
 					cleanedText = cleanedText.replace(/pic>/gi, '');
 				}
 
-				// HTML 태그 제거
+				// 데우스 프롬프트 글(본문이 <prose> 안에 든 구조)이면 본문 껍데기부터 벗긴다. 아니면 건너뛴다(기존 동작 그대로)
+				if (DEUS_GATE.test(cleanedText)) {
+					cleanedText = deusPreClean(cleanedText);
+					debugLog('깡갤 복사기: 데우스 구조 감지 → 본문 껍데기 전처리 적용, 길이:', cleanedText.length);
+				}
+
+				// 인라인 서식 태그(<b> <i> <span> 등)는 태그만 벗기고 안의 글자는 남긴다
+				// (아래 짝 태그 제거가 먼저 돌면 <b>본문</b> 처럼 서식만 입힌 글이 통째로 사라짐)
+				cleanedText = cleanedText.replace(/<\/?(b|i|em|strong|u|s|span|font|mark|small|sub|sup|a|code)(\s[^>]*)?>/gi, '');
+
+				// HTML 태그 제거 (짝 태그는 안의 내용까지 — 상태창 등)
                 while (iterationCount < maxIterations) {
                     const previousText = cleanedText;
                     cleanedText = cleanedText.replace(/<([^>\/\s]+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g, '');
@@ -253,13 +490,27 @@
                 cleanedText = cleanedText.trim();
 
                 debugLog(`깡갤 복사기: 태그 및 템플릿 구문 제거 완료, 최종 길이:`, cleanedText.length);
+                // 되돌리기용으로 적용 전 원문을 보관 (가장 최근 1건만)
+                const undoToken = { el: targetElement[0], text: currentText };
+                lastTagRemove = undoToken;
                 targetElement.val(cleanedText);
                 targetElement.trigger('input');
 
                 if (cleanedText.length < currentText.length) {
                     const removedChars = currentText.length - cleanedText.length;
-                    toastr.success(`태그 및 템플릿 구문 제거 완료! (${removedChars}자 제거됨)`);
+                    toastr.success(`태그 및 템플릿 구문 제거 완료 (${removedChars}자 제거). 이 알림을 누르면 되돌립니다.`, '', {
+                        timeOut: 8000,
+                        onclick: () => {
+                            // 되돌리기는 1회만, 그 뒤로 유저가 글을 고치지 않았을 때만 (고친 글을 덮어쓰지 않는다)
+                            if (lastTagRemove !== undoToken) return;
+                            lastTagRemove = null;
+                            if (targetElement.val() === cleanedText) {
+                                targetElement.val(currentText).trigger('input');
+                            }
+                        },
+                    });
                 } else {
+                    lastTagRemove = null;
                     toastr.info('제거할 태그나 템플릿 구문이 없습니다.');
                 }
             } catch (error) {
@@ -268,82 +519,34 @@
             }
         },
 
-        // 스마트 삭제 후 재생성 함수 (채팅 유무에 따라 분기, Polling 방식으로 삭제 완료 대기)
-        smartDeleteAndRegenerate: function() {
-            try {
-                const context = window.SillyTavern.getContext();
-                const chat = context.chat;
-                
-                if (!chat || chat.length === 0) {
-                    // 채팅 0개: 삭제 생략, 재생성만 실행
-                    debugLog('깡갤 복사기: 채팅 없음 - 삭제 생략, 재생성만 실행');
-                    this.triggerCacheBustRegeneration();
-                } else {
-                    // 채팅 있음: 삭제 후 재생성 (Polling 방식으로 삭제 완료 대기)
-                    const originalLength = chat.length;
-                    debugLog('깡갤 복사기: 채팅 있음 - 삭제 후 재생성 실행 (Polling 방식), 원본 메시지 수:', originalLength);
-                    
-                    this.executeSimpleCommand('/del 1', '', () => {
-                        let pollCount = 0;
-                        const maxPollCount = 25; // 5초 타임아웃 (200ms * 25 = 5000ms)
-                        
-                        const checkDeletion = setInterval(() => {
-                            pollCount++;
-                            const currentContext = window.SillyTavern.getContext();
-                            const currentLength = currentContext.chat.length;
-                            
-                            debugLog(`깡갤 복사기: 삭제 확인 중... (${pollCount}/${maxPollCount}), 현재 메시지 수: ${currentLength}, 원본: ${originalLength}`);
-                            
-                            if (currentLength < originalLength) {
-                                // 삭제 완료 감지!
-                                clearInterval(checkDeletion);
-                                debugLog('깡갤 복사기: 삭제 완료 감지됨! 재생성 실행');
-                                this.triggerCacheBustRegeneration();
-                            } else if (pollCount >= maxPollCount) {
-                                // 타임아웃: 5초 경과해도 삭제가 안 됐지만 재생성 실행
-                                clearInterval(checkDeletion);
-                                debugLog('깡갤 복사기: 삭제 대기 타임아웃 (5초 경과) - 강제 재생성 실행');
-                                this.triggerCacheBustRegeneration();
-                            }
-                        }, 200); // 200ms마다 체크
-                    });
-                }
-            } catch (error) {
-                console.error('깡갤 복사기: 스마트 삭제 후 재생성 실패', error);
-                toastr.error('재생성 중 오류가 발생했습니다.');
-            }
+        // (구) 삭제 후 재생성 폴백 — 위와 같은 이유로 제거. 삭제도 하지 않고 안내만 한다.
+        legacySmartDeleteAndRegenerate: function() {
+            return this.legacyTriggerCacheBustRegeneration();
         },
 
         // 텍스트박스 내용을 클립보드에 복사하는 함수
         copyTextboxContent: async function() {
             try {
-                const textboxContent = $('#copybot_textbox').val();
+                const textboxContent = String($('#copybot_textbox').val() || '');
                 if (!textboxContent.trim()) {
                     toastr.warning('텍스트박스에 복사할 내용이 없습니다.');
                     return;
                 }
-                await navigator.clipboard.writeText(textboxContent);
-                toastr.success('위 내용이 클립보드에 복사되었습니다!');
-                debugLog('깡갤 복사기: 텍스트박스 내용 클립보드 복사 완료');
+                // 클립보드 API → 실패 시 execCommand 폴백까지 writeToClipboard 한 곳이 처리
+                const ok = await this.writeToClipboard(textboxContent);
+                toastr[ok ? 'success' : 'error'](ok ? '위 내용이 클립보드에 복사되었습니다!' : '클립보드 복사에 실패했습니다.');
+                debugLog('깡갤 복사기: 텍스트박스 내용 클립보드 복사', ok ? '완료' : '실패');
             } catch (error) {
                 console.error('깡갤 복사기: 클립보드 복사 실패', error);
-                try {
-                    const textArea = document.createElement('textarea');
-                    textArea.value = $('#copybot_textbox').val();
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                    toastr.success('위 내용이 클립보드에 복사되었습니다! (fallback)');
-                    debugLog('깡갤 복사기: fallback 방법으로 클립보드 복사 완료');
-                } catch (fallbackError) {
-                    console.error('깡갤 복사기: fallback 복사도 실패', fallbackError);
-                    toastr.error('클립보드 복사에 실패했습니다.');
-                }
+                toastr.error('클립보드 복사에 실패했습니다.');
             }
         }
     };
-    
+
+    // 테스트 노출용 (확장 동작에는 쓰지 않는다)
+    window.CopyBotCommands._deusGate = DEUS_GATE;
+    window.CopyBotCommands._deusPreClean = deusPreClean;
+
     if (window.copybot_debug_mode) {
         console.log('깡갤 복사기: commands.js 모듈 로드 완료');
     }

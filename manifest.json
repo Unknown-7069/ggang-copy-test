@@ -6,8 +6,9 @@
     "js": "index.js",
     "css": "style.css",
     "settings": "settings.html",
-    "author": "User", 
-    "version": "2.1.3",
-    "homePage": "https://github.com/Unknown-7069/ggang-copy",
+    "generate_interceptor": "copybot_regen_interceptor",
+    "author": "User",
+    "version": "3.5.2",
+    "homePage": "https://github.com/Unknown-7069/ggang-copy-test",
     "auto_update": true
 }
